@@ -2,8 +2,8 @@ from decimal import Decimal
 
 import pytest
 
-from crypto_lab.market_data import normalize_okx_order_book
-from crypto_lab.models import OrderBookDelta, OrderBookSnapshot
+from crypto_lab.market_data import normalize_okx_order_book, normalize_okx_trades
+from crypto_lab.models import OrderBookDelta, OrderBookSnapshot, TradeSide
 from crypto_lab.trading import normalize_okx_spot_rules
 
 
@@ -63,6 +63,73 @@ def test_okx_normalizer_rejects_wrong_channel_or_invalid_values() -> None:
     invalid["data"][0]["asks"][0][1] = "bad"  # type: ignore[index]
     with pytest.raises(ValueError, match="decimal"):
         normalize_okx_order_book(invalid, received_ts_ms=1_001)
+
+
+def test_okx_trades_normalize_taker_side_and_aggregate_quantity() -> None:
+    events = normalize_okx_trades(
+        {
+            "arg": {"channel": "trades", "instId": "BTC-USDT"},
+            "data": [
+                {
+                    "instId": "BTC-USDT",
+                    "tradeId": "130639474",
+                    "px": "42219.9",
+                    "sz": "0.12060306",
+                    "side": "sell",
+                    "ts": "1630048897897",
+                    "count": "3",
+                }
+            ],
+        },
+        received_ts_ms=1_630_048_897_900,
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.event_id == "okx:BTC-USDT:trade:130639474:1630048897897:0"
+    assert event.instrument_id == "okx:SPOT:BTC/USDT"
+    assert event.exchange_ts_ms == 1_630_048_897_897
+    assert event.payload.trade_id == "130639474"
+    assert event.payload.price == Decimal("42219.9")
+    assert event.payload.quantity == Decimal("0.12060306")
+    assert event.payload.side is TradeSide.SELL
+
+
+@pytest.mark.parametrize("side", ["unknown", "", "BUY"])
+def test_okx_trade_normalizer_rejects_unrecognized_side(side: str) -> None:
+    payload = {
+        "arg": {"channel": "trades", "instId": "BTC-USDT"},
+        "data": [
+            {
+                "instId": "BTC-USDT",
+                "tradeId": "1",
+                "px": "100",
+                "sz": "1",
+                "side": side,
+                "ts": "1000",
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="side"):
+        normalize_okx_trades(payload, received_ts_ms=1_001)
+
+
+def test_okx_trade_normalizer_rejects_mismatched_instrument() -> None:
+    payload = {
+        "arg": {"channel": "trades", "instId": "BTC-USDT"},
+        "data": [
+            {
+                "instId": "ETH-USDT",
+                "tradeId": "1",
+                "px": "100",
+                "sz": "1",
+                "side": "buy",
+                "ts": "1000",
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="differs"):
+        normalize_okx_trades(payload, received_ts_ms=1_001)
 
 
 def test_okx_spot_instrument_rules_are_explicit_and_versioned() -> None:

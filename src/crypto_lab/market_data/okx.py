@@ -15,6 +15,8 @@ from crypto_lab.models import (
     OrderBookDelta,
     OrderBookSnapshot,
     PriceLevel,
+    Trade,
+    TradeSide,
     TransportType,
 )
 
@@ -81,6 +83,63 @@ def normalize_okx_order_book(
     )
 
 
+def normalize_okx_trades(
+    payload: object,
+    *,
+    received_ts_ms: int,
+    source_type: DataSourceType = DataSourceType.LIVE,
+    raw_ref: str | None = None,
+) -> tuple[MarketEventEnvelope[Trade], ...]:
+    """Normalize every aggregate in an OKX public ``trades`` message.
+
+    OKX defines ``side`` as the taker side. The public channel can aggregate
+    several matches at the same price into one item; its ``sz`` is therefore
+    retained as the single allocatable quantity and ``tradeId`` as its source
+    identity.
+    """
+
+    message = _mapping(payload, "OKX message")
+    argument = _mapping(message.get("arg"), "OKX message arg")
+    if argument.get("channel") != "trades":
+        raise ValueError("OKX trade normalizer requires trades channel")
+    subscribed_instrument = _required_string(argument, "instId")
+    instrument_id = _canonical_spot_instrument(subscribed_instrument)
+    rows = _sequence(message.get("data"), "OKX message data")
+    if not rows:
+        raise ValueError("OKX trades message must contain at least one data item")
+
+    events: list[MarketEventEnvelope[Trade]] = []
+    for index, row in enumerate(rows):
+        item = _mapping(row, "OKX trades data item")
+        instrument = _required_string(item, "instId")
+        if instrument != subscribed_instrument:
+            raise ValueError("OKX trade item instrument differs from subscription")
+        trade_id = _required_string(item, "tradeId")
+        side = _trade_side(_required_string(item, "side"))
+        exchange_ts_ms = _required_nonnegative_int_string(item, "ts")
+        events.append(
+            MarketEventEnvelope[Trade](
+                event_id=f"okx:{instrument}:trade:{trade_id}:{exchange_ts_ms}:{index}",
+                event_type="TRADE",
+                exchange_id=ExchangeId.OKX,
+                instrument_id=instrument_id,
+                source_type=source_type,
+                transport=TransportType.WEBSOCKET,
+                exchange_ts_ms=exchange_ts_ms,
+                received_ts_ms=received_ts_ms,
+                raw_ref=raw_ref,
+                quality_status=DataQualityStatus.VALID,
+                payload=Trade(
+                    trade_id=trade_id,
+                    price=_positive_decimal(item.get("px"), "trade price"),
+                    quantity=_positive_decimal(item.get("sz"), "trade quantity"),
+                    side=side,
+                ),
+            )
+        )
+    return tuple(events)
+
+
 def _levels(value: object, name: str) -> tuple[PriceLevel, ...]:
     rows = _sequence(value, f"OKX {name}")
     levels: list[PriceLevel] = []
@@ -102,6 +161,14 @@ def _canonical_spot_instrument(instrument: str) -> str:
     if len(parts) != 2 or not all(parts):
         raise ValueError("OKX SPOT instrument must contain base and quote currencies")
     return f"okx:SPOT:{parts[0]}/{parts[1]}"
+
+
+def _trade_side(value: str) -> TradeSide:
+    if value == "buy":
+        return TradeSide.BUY
+    if value == "sell":
+        return TradeSide.SELL
+    raise ValueError("OKX trade side must be buy or sell")
 
 
 def _mapping(value: object, name: str) -> Mapping[str, Any]:
