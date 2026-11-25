@@ -145,7 +145,7 @@ class OrderService:
         self._orders[order_id] = entered
         return entered
 
-    def cancel(self, order_id: str) -> PaperOrder:
+    def cancel(self, order_id: str, *, reason: str | None = None) -> PaperOrder:
         order = self.get(order_id)
         if order.status not in {
             OrderStatus.PENDING_EXECUTION,
@@ -157,7 +157,11 @@ class OrderService:
         if remaining_reservation > 0:
             self.ledger.release(order.reserved_asset, remaining_reservation, order.order_id)
         canceled = order.model_copy(
-            update={"status": OrderStatus.CANCELED, "updated_ts_ms": self._now_utc_ms()}
+            update={
+                "status": OrderStatus.CANCELED,
+                "termination_reason": reason,
+                "updated_ts_ms": self._now_utc_ms(),
+            }
         )
         self._orders[order_id] = canceled
         return canceled

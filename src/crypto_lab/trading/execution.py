@@ -119,6 +119,7 @@ class ExecutionSimulator:
         market_rules: MarketRules,
         liquidity: SimulatedLiquidityView,
         consumption_id: str,
+        executed_ts_ms: int | None = None,
     ) -> tuple[ExecutionRecord, ...]:
         self._require_fee_rate(fee_rate)
         order = self.orders.get(order_id)
@@ -137,11 +138,11 @@ class ExecutionSimulator:
         market_rules.validate(plan)
         liquidity.validate_consumption(plan, consumption_id=consumption_id)
         if plan.status is MatchStatus.NO_FILL:
-            self.orders.cancel(order_id)
+            self.orders.cancel(order_id, reason="NO_LEGAL_MARKET_FILL")
             return ()
 
         _, base_asset, quote_asset = split_instrument(order.instrument_id)
-        executed_ts_ms = utc_now_ms()
+        executed_ts_ms = utc_now_ms() if executed_ts_ms is None else executed_ts_ms
         records: list[ExecutionRecord] = []
         entries: list[LedgerEntry] = []
         for fill in plan.fills:
@@ -188,6 +189,7 @@ class ExecutionSimulator:
                 "cumulative_fee": new_fee,
                 "average_fill_price": new_quote_amount / new_filled_quantity,
                 "status": new_status,
+                "termination_reason": None if final_fill else "PARTIAL_MARKET_EXECUTION",
                 "updated_ts_ms": executed_ts_ms,
             }
         )

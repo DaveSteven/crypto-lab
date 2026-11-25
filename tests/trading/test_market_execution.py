@@ -153,3 +153,51 @@ def test_disconnected_market_state_cannot_execute() -> None:
         )
 
     assert orders.get(order_id).status is OrderStatus.OPEN
+
+
+def test_market_buy_price_rise_fills_only_within_frozen_budget_and_cancels_rest() -> None:
+    orders = OrderService(create_paper_account(ExchangeId.OKX), clock=lambda: 1_100)
+    order = orders.place(
+        instrument_id=INSTRUMENT,
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("2"),
+        market_reference_price=Decimal("100"),
+        estimated_buy_fee_rate=Decimal("0.01"),
+    )
+    state = OrderBookMarketState()
+    event = snapshot()
+    event = event.model_copy(
+        update={
+            "payload": event.payload.model_copy(
+                update={"asks": (PriceLevel(price="110", quantity="2"),)}
+            )
+        }
+    )
+    state.apply_snapshot(event)
+    service = OrderBookExecutionService(
+        state,
+        ExecutionSimulator(orders),
+        SimulatedLiquidityView("budget-run"),
+    )
+
+    result = service.execute_market_order(
+        order.order_id,
+        exchange_id=ExchangeId.OKX,
+        instrument_id=INSTRUMENT,
+        decision_ts_ms=1_100,
+        max_book_age_ms=2_000,
+        fee_rate=Decimal("0.01"),
+        market_rules=RULES,
+        consumption_id="budget-match",
+        executed_ts_ms=1_100,
+    )
+
+    updated = orders.get(order.order_id)
+    assert result.plan.filled_quantity == Decimal("1")
+    assert updated.status is OrderStatus.CANCELED
+    assert updated.termination_reason == "PARTIAL_MARKET_EXECUTION"
+    assert updated.cumulative_quote_amount == Decimal("110")
+    assert updated.cumulative_fee == Decimal("1.10")
+    assert orders.ledger.balance("USDT").locked == 0
+    assert orders.ledger.balance("BTC").available == Decimal("1")

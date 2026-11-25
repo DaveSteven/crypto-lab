@@ -35,6 +35,7 @@ from crypto_lab.trading.matching import (
     MatchStatus,
     SlippageMetrics,
     match_limit_order,
+    match_market_buy_with_budget,
     match_market_order,
 )
 from crypto_lab.trading.models import AssetBalance, LedgerEntry, LedgerReason, PaperAccount
@@ -104,6 +105,7 @@ __all__ = [
     "TradeThroughEngine",
     "create_paper_account",
     "match_market_order",
+    "match_market_buy_with_budget",
     "match_limit_order",
     "normalize_okx_spot_rules",
 ]

@@ -83,6 +83,80 @@ def match_market_order(
     )
 
 
+def match_market_buy_with_budget(
+    book: OrderBookView,
+    *,
+    quantity: Decimal,
+    max_quote_budget: Decimal,
+    fee_rate: Decimal,
+    quantity_increment: Decimal,
+    min_quantity: Decimal,
+    min_notional: Decimal | None,
+    submission_reference_price: Decimal | None,
+) -> MatchPlan:
+    """Build a buy plan whose notional plus fee never exceeds frozen budget."""
+
+    _require_positive_decimal(quantity, "quantity")
+    _require_positive_decimal(max_quote_budget, "max_quote_budget")
+    _require_positive_decimal(quantity_increment, "quantity_increment")
+    _require_positive_decimal(min_quantity, "min_quantity")
+    if not isinstance(fee_rate, Decimal):
+        raise TypeError("fee_rate must be Decimal")
+    if fee_rate < 0 or fee_rate > 1:
+        raise ValueError("fee_rate must be between zero and one")
+    if min_notional is not None:
+        _require_positive_decimal(min_notional, "min_notional")
+    if submission_reference_price is not None:
+        _require_positive_decimal(submission_reference_price, "submission_reference_price")
+
+    remaining_quantity = quantity
+    remaining_budget = max_quote_budget
+    fills: list[FillLeg] = []
+    for level in book.asks:
+        unit_cost = level.price * (Decimal(1) + fee_rate)
+        affordable = _floor_to_increment(remaining_budget / unit_cost, quantity_increment)
+        available = _floor_to_increment(level.quantity, quantity_increment)
+        fill_quantity = min(available, remaining_quantity, affordable)
+        fill_quantity = _floor_to_increment(fill_quantity, quantity_increment)
+        if fill_quantity <= 0:
+            break
+        quote_amount = level.price * fill_quantity
+        fills.append(FillLeg(price=level.price, quantity=fill_quantity, quote_amount=quote_amount))
+        remaining_quantity -= fill_quantity
+        remaining_budget -= quote_amount * (Decimal(1) + fee_rate)
+        if remaining_quantity == 0:
+            break
+
+    filled = quantity - remaining_quantity
+    notional = sum((fill.quote_amount for fill in fills), Decimal(0))
+    if filled < min_quantity or (min_notional is not None and notional < min_notional):
+        fills = []
+        filled = Decimal(0)
+        remaining_quantity = quantity
+        notional = Decimal(0)
+    vwap = notional / filled if filled else None
+    execution_reference = book.asks[0].price if book.asks else None
+    return MatchPlan(
+        book_event_id=book.source_event_id,
+        side=OrderSide.BUY,
+        requested_quantity=quantity,
+        fills=tuple(fills),
+        filled_quantity=filled,
+        remaining_quantity=remaining_quantity,
+        total_notional=notional,
+        vwap=vwap,
+        status=_status(filled, quantity),
+        slippage=_slippage(
+            side=OrderSide.BUY,
+            fills=tuple(fills),
+            filled_quantity=filled,
+            vwap=vwap,
+            submission_reference_price=submission_reference_price,
+            execution_reference_price=execution_reference,
+        ),
+    )
+
+
 def match_limit_order(
     book: OrderBookView,
     *,
@@ -220,3 +294,7 @@ def _require_positive_decimal(value: Decimal, name: str) -> None:
         raise TypeError(f"{name} must be Decimal")
     if value <= 0:
         raise ValueError(f"{name} must be positive")
+
+
+def _floor_to_increment(value: Decimal, increment: Decimal) -> Decimal:
+    return (value // increment) * increment

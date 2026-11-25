@@ -30,6 +30,8 @@ class MarketRules(FrozenModel):
         for fill in plan.fills:
             _require_increment(fill.price, self.price_increment, "fill price")
             _require_increment(fill.quantity, self.quantity_increment, "fill quantity")
+        if plan.filled_quantity and plan.filled_quantity < self.min_quantity:
+            raise MarketRuleViolation("filled quantity is below the market minimum")
 
         reference_price = (
             plan.slippage.submission_reference_price or plan.slippage.execution_reference_price
@@ -39,6 +41,8 @@ class MarketRules(FrozenModel):
                 raise MarketRuleViolation("minimum notional requires a reference price")
             if reference_price * plan.requested_quantity < self.min_notional:
                 raise MarketRuleViolation("order notional is below the market minimum")
+            if plan.filled_quantity and plan.total_notional < self.min_notional:
+                raise MarketRuleViolation("filled notional is below the market minimum")
 
 
 def _require_increment(value: Decimal, increment: Decimal, name: str) -> None:
