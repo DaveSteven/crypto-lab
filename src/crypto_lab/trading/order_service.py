@@ -208,6 +208,7 @@ class OrderService:
             update={
                 "executed_ts_ms": executed_ts_ms,
                 "actual_simulated_delay_ms": executed_ts_ms - order.submitted_ts_ms,
+                "scheduler_lag_ms": executed_ts_ms - order.scheduled_execution_ts_ms,
                 "execution_quote_event_id": execution_quote_event_id,
                 "updated_ts_ms": executed_ts_ms,
             }

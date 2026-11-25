@@ -122,7 +122,11 @@ def test_due_market_buy_uses_new_price_and_records_timing() -> None:
     assert updated.actual_simulated_delay_ms == 100
     assert updated.submission_quote_event_id == "submission-book"
     assert updated.execution_quote_event_id == "execution-book"
-    assert executor.outcome(order.order_id).outcome == "FILLED"
+    outcome = executor.outcome(order.order_id)
+    assert outcome.outcome == "FILLED"
+    assert outcome.plan is not None
+    assert outcome.plan.slippage.price_drift == Decimal("-10")
+    assert outcome.plan.slippage.total_slippage_amount == Decimal("-20")
 
 
 def test_market_price_rise_partially_fills_within_budget_then_cancels() -> None:
@@ -145,6 +149,56 @@ def test_market_price_rise_partially_fills_within_budget_then_cancels() -> None:
     assert updated.status is OrderStatus.CANCELED
     assert updated.filled_quantity == Decimal("1")
     assert orders.ledger.balance("USDT").locked == 0
+    assert executor.outcome(order.order_id).outcome == "PARTIAL_CANCELED"
+
+
+def test_market_sell_with_insufficient_depth_partially_fills_and_releases_rest() -> None:
+    clock = ManualClock(1_000)
+    orders = OrderService(
+        create_paper_account(
+            ExchangeId.OKX,
+            initial_asset="BTC",
+            initial_amount=Decimal("2"),
+        ),
+        clock=clock,
+    )
+    simulator = ExecutionSimulator(orders)
+    state = OrderBookMarketState()
+    liquidity = SimulatedLiquidityView("sell-run")
+    executor = ScheduledOrderExecutor(
+        orders=orders,
+        market_state=state,
+        market_execution=OrderBookExecutionService(state, simulator, liquidity),
+        limit_execution=LimitOrderExecutionService(state, simulator, liquidity),
+    )
+    scheduler = ExecutionScheduler(orders, clock)
+    order = orders.place(
+        instrument_id=INSTRUMENT,
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("2"),
+        market_reference_price=Decimal("99"),
+        fee_schedule=FEES,
+    )
+    register(scheduler, executor, order.order_id)
+    event = snapshot("thin-bid-book", ask="101", received_ts_ms=1_050)
+    event = event.model_copy(
+        update={
+            "payload": event.payload.model_copy(
+                update={"bids": (PriceLevel(price="100", quantity="1"),)}
+            )
+        }
+    )
+    state.apply_snapshot(event)
+    clock.advance(100)
+
+    scheduler.run_due(executor)
+
+    updated = orders.get(order.order_id)
+    assert updated.status is OrderStatus.CANCELED
+    assert updated.filled_quantity == Decimal("1")
+    assert orders.ledger.balance("BTC").locked == 0
+    assert orders.ledger.balance("BTC").available == Decimal("1")
     assert executor.outcome(order.order_id).outcome == "PARTIAL_CANCELED"
 
 

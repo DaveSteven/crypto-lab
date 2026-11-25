@@ -56,6 +56,7 @@ class PaperOrder(FrozenModel):
     executed_ts_ms: int | None = Field(default=None, ge=0)
     configured_latency_ms: int | None = Field(default=None, ge=0)
     actual_simulated_delay_ms: int | None = Field(default=None, ge=0)
+    scheduler_lag_ms: int | None = Field(default=None, ge=0)
     submission_quote_event_id: str | None = Field(default=None, min_length=1)
     execution_quote_event_id: str | None = Field(default=None, min_length=1)
     termination_reason: str | None = Field(default=None, min_length=1)
@@ -96,8 +97,13 @@ class PaperOrder(FrozenModel):
             expected_delay = self.executed_ts_ms - self.submitted_ts_ms
             if self.actual_simulated_delay_ms != expected_delay:
                 raise ValueError("actual simulated delay is inconsistent with execution time")
+            expected_lag = self.executed_ts_ms - self.scheduled_execution_ts_ms
+            if self.scheduler_lag_ms != expected_lag:
+                raise ValueError("scheduler lag is inconsistent with execution time")
         elif self.actual_simulated_delay_ms is not None:
             raise ValueError("actual simulated delay requires execution time")
+        elif self.scheduler_lag_ms is not None:
+            raise ValueError("scheduler lag requires execution time")
         if self.status is OrderStatus.PENDING_EXECUTION:
             if self.scheduled_execution_ts_ms is None or self.configured_latency_ms is None:
                 raise ValueError("pending execution requires schedule metadata")

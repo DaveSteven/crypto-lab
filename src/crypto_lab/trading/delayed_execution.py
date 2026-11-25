@@ -10,6 +10,7 @@ from crypto_lab.trading.constraints import MarketRules
 from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.limit_execution import LimitOrderExecutionService
 from crypto_lab.trading.market_execution import OrderBookExecutionService
+from crypto_lab.trading.matching import MatchPlan
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.order_service import OrderService
 from crypto_lab.trading.orders import OrderType, PaperOrder
@@ -20,6 +21,7 @@ class DelayedExecutionOutcome(FrozenModel):
     outcome: str
     reason: str | None = None
     execution_quote_event_id: str | None = None
+    plan: MatchPlan | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +160,7 @@ class ScheduledOrderExecutor:
             order.order_id,
             outcome=outcome,
             execution_quote_event_id=book.source_event_id,
+            plan=result.plan,
         )
 
     def _finish(
@@ -167,6 +170,7 @@ class ScheduledOrderExecutor:
         outcome: str,
         reason: str | None = None,
         execution_quote_event_id: str | None = None,
+        plan: MatchPlan | None = None,
     ) -> None:
         self._instructions.pop(order_id, None)
         self._outcomes[order_id] = DelayedExecutionOutcome(
@@ -174,4 +178,5 @@ class ScheduledOrderExecutor:
             outcome=outcome,
             reason=reason,
             execution_quote_event_id=execution_quote_event_id,
+            plan=plan,
         )

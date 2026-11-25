@@ -125,5 +125,6 @@ def test_due_handler_records_actual_delay_and_market_entry() -> None:
     assert entered.status is OrderStatus.OPEN
     assert entered.executed_ts_ms == 1_125
     assert entered.actual_simulated_delay_ms == 125
+    assert entered.scheduler_lag_ms == 25
     assert entered.execution_quote_event_id == "execution-book"
     assert entered.market_entry_ts_ms == 1_125
