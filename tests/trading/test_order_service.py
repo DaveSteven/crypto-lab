@@ -4,6 +4,7 @@ import pytest
 
 from crypto_lab.models import ExchangeId
 from crypto_lab.trading import (
+    FeeSchedule,
     InsufficientBalanceError,
     InvalidOrderTransitionError,
     OrderService,
@@ -12,6 +13,14 @@ from crypto_lab.trading import (
     OrderType,
     create_paper_account,
 )
+
+
+class ManualTime:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __call__(self) -> int:
+        return self.value
 
 
 def service(initial_amount: str = "10000") -> OrderService:
@@ -145,3 +154,69 @@ def test_order_numeric_inputs_must_be_decimal() -> None:
             quantity=0.1,  # type: ignore[arg-type]
             limit_price=Decimal("50000"),
         )
+
+
+def test_limit_buy_reserves_maximum_maker_or_taker_fee() -> None:
+    orders = service()
+    order = orders.place(
+        instrument_id="binance:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.1"),
+        limit_price=Decimal("50000"),
+        fee_schedule=FeeSchedule(
+            schedule_id="MOCK:v1",
+            maker_rate=Decimal("0.0005"),
+            taker_rate=Decimal("0.001"),
+        ),
+    )
+
+    assert order.fee_schedule_id == "MOCK:v1"
+    assert order.reserved_fee_rate == Decimal("0.001")
+    assert order.reserved_amount == Decimal("5005.0000")
+
+
+def test_order_records_submission_entry_time_and_deterministic_sequence() -> None:
+    clock = ManualTime(1_000)
+    orders = OrderService(create_paper_account(ExchangeId.BINANCE), clock=clock)
+    first = orders.place(
+        instrument_id="binance:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.01"),
+        limit_price=Decimal("100"),
+    )
+    second = orders.place(
+        instrument_id="binance:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.01"),
+        limit_price=Decimal("100"),
+    )
+
+    assert first.submitted_ts_ms == 1_000
+    assert first.market_entry_ts_ms is None
+    assert first.order_sequence == 1
+    assert second.order_sequence == 2
+
+    clock.value = 1_100
+    entered = orders.enter_market(first.order_id)
+    assert entered.market_entry_ts_ms == 1_100
+
+
+def test_market_entry_cannot_precede_submission_or_repeat() -> None:
+    clock = ManualTime(1_000)
+    orders = OrderService(create_paper_account(ExchangeId.BINANCE), clock=clock)
+    order = orders.place(
+        instrument_id="binance:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.01"),
+        limit_price=Decimal("100"),
+    )
+
+    with pytest.raises(ValueError, match="precede"):
+        orders.enter_market(order.order_id, market_entry_ts_ms=999)
+    orders.enter_market(order.order_id, market_entry_ts_ms=1_000)
+    with pytest.raises(InvalidOrderTransitionError, match="already"):
+        orders.enter_market(order.order_id, market_entry_ts_ms=1_001)

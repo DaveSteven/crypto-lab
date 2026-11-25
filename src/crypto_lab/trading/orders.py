@@ -18,6 +18,10 @@ class OrderType(StrEnum):
     LIMIT = "LIMIT"
 
 
+class TimeInForce(StrEnum):
+    GTC = "GTC"
+
+
 class OrderStatus(StrEnum):
     OPEN = "OPEN"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
@@ -41,7 +45,13 @@ class PaperOrder(FrozenModel):
     cumulative_quote_amount: Decimal = Field(default=Decimal(0), ge=0)
     cumulative_fee: Decimal = Field(default=Decimal(0), ge=0)
     average_fill_price: Decimal | None = Field(default=None, gt=0)
+    time_in_force: TimeInForce = TimeInForce.GTC
+    fee_schedule_id: str | None = Field(default=None, min_length=1)
+    reserved_fee_rate: Decimal = Field(default=Decimal(0), ge=0, le=1)
     status: OrderStatus
+    submitted_ts_ms: int = Field(ge=0)
+    market_entry_ts_ms: int | None = Field(default=None, ge=0)
+    order_sequence: int = Field(gt=0)
     created_ts_ms: int = Field(ge=0)
     updated_ts_ms: int = Field(ge=0)
 
@@ -57,4 +67,8 @@ class PaperOrder(FrozenModel):
             raise ValueError("unfilled order cannot have an average fill price")
         if self.filled_quantity > 0 and self.average_fill_price is None:
             raise ValueError("filled order requires an average fill price")
+        if self.market_entry_ts_ms is not None and self.market_entry_ts_ms < self.submitted_ts_ms:
+            raise ValueError("market entry time cannot precede submission time")
+        if self.created_ts_ms != self.submitted_ts_ms:
+            raise ValueError("created time must equal submission time")
         return self

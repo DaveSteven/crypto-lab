@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 from uuid import uuid4
 
+from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.ledger import AccountLedger
 from crypto_lab.trading.models import utc_now_ms
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
@@ -27,9 +29,16 @@ def split_instrument(instrument_id: str) -> tuple[str, str, str]:
 
 
 class OrderService:
-    def __init__(self, ledger: AccountLedger) -> None:
+    def __init__(
+        self,
+        ledger: AccountLedger,
+        *,
+        clock: Callable[[], int] = utc_now_ms,
+    ) -> None:
         self.ledger = ledger
+        self._clock = clock
         self._orders: dict[str, PaperOrder] = {}
+        self._next_order_sequence = 1
 
     def get(self, order_id: str) -> PaperOrder:
         try:
@@ -50,9 +59,12 @@ class OrderService:
         limit_price: Decimal | None = None,
         market_reference_price: Decimal | None = None,
         estimated_buy_fee_rate: Decimal = Decimal(0),
+        fee_schedule: FeeSchedule | None = None,
     ) -> PaperOrder:
         self._require_decimal_positive(quantity, "quantity")
         self._require_decimal_nonnegative(estimated_buy_fee_rate, "estimated_buy_fee_rate")
+        if fee_schedule is not None and estimated_buy_fee_rate != 0:
+            raise ValueError("use either fee_schedule or estimated_buy_fee_rate")
         exchange_id, base_asset, quote_asset = split_instrument(instrument_id)
         if exchange_id != self.ledger.account.exchange_id.value:
             raise ValueError("instrument exchange does not match account exchange")
@@ -74,13 +86,18 @@ class OrderService:
 
         if side is OrderSide.BUY:
             reserved_asset = quote_asset
-            reserved_amount = quantity * reference_price * (Decimal(1) + estimated_buy_fee_rate)
+            reserved_fee_rate = (
+                fee_schedule.maximum_rate if fee_schedule is not None else estimated_buy_fee_rate
+            )
+            reserved_amount = quantity * reference_price * (Decimal(1) + reserved_fee_rate)
         else:
             reserved_asset = base_asset
+            reserved_fee_rate = Decimal(0)
             reserved_amount = quantity
 
         order_id = str(uuid4())
-        now_ms = utc_now_ms()
+        now_ms = self._clock()
+        order_sequence = self._next_order_sequence
         order = PaperOrder(
             order_id=order_id,
             account_id=self.ledger.account.account_id,
@@ -92,13 +109,33 @@ class OrderService:
             reference_price=reference_price,
             reserved_asset=reserved_asset,
             reserved_amount=reserved_amount,
+            fee_schedule_id=(fee_schedule.schedule_id if fee_schedule is not None else None),
+            reserved_fee_rate=reserved_fee_rate,
             status=OrderStatus.OPEN,
+            submitted_ts_ms=now_ms,
+            order_sequence=order_sequence,
             created_ts_ms=now_ms,
             updated_ts_ms=now_ms,
         )
         self.ledger.reserve(reserved_asset, reserved_amount, order_id)
         self._orders[order_id] = order
+        self._next_order_sequence += 1
         return order
+
+    def enter_market(self, order_id: str, *, market_entry_ts_ms: int | None = None) -> PaperOrder:
+        order = self.get(order_id)
+        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+            raise InvalidOrderTransitionError(f"cannot enter market in {order.status} state")
+        if order.market_entry_ts_ms is not None:
+            raise InvalidOrderTransitionError("order has already entered the market")
+        entry_ts_ms = self._clock() if market_entry_ts_ms is None else market_entry_ts_ms
+        if entry_ts_ms < order.submitted_ts_ms:
+            raise ValueError("market entry time cannot precede submission time")
+        entered = order.model_copy(
+            update={"market_entry_ts_ms": entry_ts_ms, "updated_ts_ms": entry_ts_ms}
+        )
+        self._orders[order_id] = entered
+        return entered
 
     def cancel(self, order_id: str) -> PaperOrder:
         order = self.get(order_id)
@@ -108,7 +145,7 @@ class OrderService:
         if remaining_reservation > 0:
             self.ledger.release(order.reserved_asset, remaining_reservation, order.order_id)
         canceled = order.model_copy(
-            update={"status": OrderStatus.CANCELED, "updated_ts_ms": utc_now_ms()}
+            update={"status": OrderStatus.CANCELED, "updated_ts_ms": self._clock()}
         )
         self._orders[order_id] = canceled
         return canceled

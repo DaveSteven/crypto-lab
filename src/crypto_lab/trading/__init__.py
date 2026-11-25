@@ -2,6 +2,7 @@
 
 from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
 from crypto_lab.trading.execution import ExecutionAttempt, ExecutionRecord, ExecutionSimulator
+from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.ledger import (
     AccountLedger,
     InsufficientBalanceError,
@@ -22,7 +23,7 @@ from crypto_lab.trading.matching import (
 from crypto_lab.trading.models import AssetBalance, LedgerEntry, LedgerReason, PaperAccount
 from crypto_lab.trading.okx_rules import normalize_okx_spot_rules
 from crypto_lab.trading.order_service import InvalidOrderTransitionError, OrderService
-from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
+from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder, TimeInForce
 from crypto_lab.trading.portfolio import (
     InsufficientPositionError,
     PortfolioEngine,
@@ -36,6 +37,7 @@ __all__ = [
     "ExecutionAttempt",
     "ExecutionRecord",
     "ExecutionSimulator",
+    "FeeSchedule",
     "FillLeg",
     "InsufficientBalanceError",
     "InsufficientPositionError",
@@ -60,6 +62,7 @@ __all__ = [
     "PositionValuation",
     "SlippageMetrics",
     "SimulatedLiquidityView",
+    "TimeInForce",
     "create_paper_account",
     "match_market_order",
     "normalize_okx_spot_rules",
