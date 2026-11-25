@@ -8,6 +8,7 @@ from crypto_lab.trading.clock import (
     SystemClock,
 )
 from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
+from crypto_lab.trading.delayed_execution import DelayedExecutionOutcome, ScheduledOrderExecutor
 from crypto_lab.trading.execution import (
     ExecutionAttempt,
     ExecutionRecord,
@@ -60,6 +61,7 @@ __all__ = [
     "AccountLedger",
     "AssetBalance",
     "Clock",
+    "DelayedExecutionOutcome",
     "ExecutionAttempt",
     "ExecutionLatency",
     "ExecutionRecord",
@@ -94,6 +96,7 @@ __all__ = [
     "Position",
     "PositionValuation",
     "ScheduledExecution",
+    "ScheduledOrderExecutor",
     "SchedulerRunResult",
     "SlippageMetrics",
     "SimulatedLiquidityView",

@@ -225,6 +225,7 @@ class ExecutionSimulator:
         market_rules: MarketRules,
         liquidity: SimulatedLiquidityView,
         consumption_id: str,
+        executed_ts_ms: int | None = None,
     ) -> tuple[ExecutionRecord, ...]:
         self._require_fee_rate(fee_rate)
         order = self.orders.get(order_id)
@@ -248,7 +249,7 @@ class ExecutionSimulator:
             return ()
 
         _, base_asset, quote_asset = split_instrument(order.instrument_id)
-        executed_ts_ms = utc_now_ms()
+        executed_ts_ms = utc_now_ms() if executed_ts_ms is None else executed_ts_ms
         records: list[ExecutionRecord] = []
         entries: list[LedgerEntry] = []
         for fill in plan.fills:

@@ -39,6 +39,7 @@ class LimitOrderExecutionService:
         fee_schedule: FeeSchedule,
         market_rules: MarketRules,
         consumption_id: str,
+        executed_ts_ms: int | None = None,
     ) -> LimitOrderEntryResult:
         order = self.simulator.orders.get(order_id)
         if order.order_type is not OrderType.LIMIT:
@@ -81,6 +82,7 @@ class LimitOrderExecutionService:
             market_rules=market_rules,
             liquidity=self.liquidity,
             consumption_id=consumption_id,
+            executed_ts_ms=executed_ts_ms,
         )
         updated = self.simulator.orders.get(order_id)
         return LimitOrderEntryResult(
