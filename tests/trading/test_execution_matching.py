@@ -7,6 +7,8 @@ from crypto_lab.models import DataQualityStatus, ExchangeId, PriceLevel
 from crypto_lab.trading import (
     ExecutionSimulator,
     InsufficientBalanceError,
+    MarketRules,
+    MarketRuleViolation,
     OrderService,
     OrderSide,
     OrderStatus,
@@ -14,6 +16,14 @@ from crypto_lab.trading import (
     SimulatedLiquidityView,
     create_paper_account,
     match_market_order,
+)
+
+RULES = MarketRules(
+    rules_id="MOCK:BTC-USDT:v1",
+    price_increment=Decimal("1"),
+    quantity_increment=Decimal("1"),
+    min_quantity=Decimal("1"),
+    min_notional=Decimal("10"),
 )
 
 
@@ -69,6 +79,7 @@ def test_multi_level_plan_settles_all_fills_without_extra_slippage_charge() -> N
         order_id,
         plan,
         fee_rate=Decimal("0.001"),
+        market_rules=RULES,
         liquidity=liquidity,
         consumption_id="match-1",
     )
@@ -98,6 +109,7 @@ def test_insufficient_depth_cancels_remainder_and_releases_reservation() -> None
         order_id,
         plan,
         fee_rate=Decimal("0.001"),
+        market_rules=RULES,
         liquidity=liquidity,
         consumption_id="match-1",
     )
@@ -125,6 +137,7 @@ def test_no_liquidity_cancels_order_without_execution() -> None:
         order_id,
         plan,
         fee_rate=Decimal("0.001"),
+        market_rules=RULES,
         liquidity=liquidity,
         consumption_id="match-1",
     )
@@ -154,6 +167,7 @@ def test_settlement_failure_does_not_consume_liquidity_or_update_order() -> None
             order_id,
             plan,
             fee_rate=Decimal("0.001"),
+            market_rules=RULES,
             liquidity=liquidity,
             consumption_id="match-1",
         )
@@ -192,6 +206,7 @@ def test_market_sell_settles_multiple_bid_levels() -> None:
         order.order_id,
         plan,
         fee_rate=Decimal("0.001"),
+        market_rules=RULES,
         liquidity=liquidity,
         consumption_id="match-1",
     )
@@ -218,6 +233,37 @@ def test_match_plan_must_match_order_side_and_remaining_quantity() -> None:
             order_id,
             sell_plan,
             fee_rate=Decimal("0.001"),
+            market_rules=RULES,
             liquidity=liquidity,
             consumption_id="match-1",
         )
+
+
+def test_market_rules_reject_invalid_quantity_without_mutation() -> None:
+    orders, simulator, liquidity, order_id = buy_context(
+        quantity="1", reference_price="100", fee_buffer="0.001"
+    )
+    liquidity.synchronize(market_book())
+    plan = match_market_order(
+        liquidity.available_book(),
+        side=OrderSide.BUY,
+        quantity=Decimal("1"),
+        submission_reference_price=Decimal("100"),
+    )
+    restrictive = RULES.model_copy(update={"min_quantity": Decimal("2")})
+    before_entries = orders.ledger.entries
+    before_book = liquidity.available_book()
+
+    with pytest.raises(MarketRuleViolation, match="below"):
+        simulator.execute_match_plan(
+            order_id,
+            plan,
+            fee_rate=Decimal("0.001"),
+            market_rules=restrictive,
+            liquidity=liquidity,
+            consumption_id="match-1",
+        )
+
+    assert orders.get(order_id).status is OrderStatus.OPEN
+    assert orders.ledger.entries == before_entries
+    assert liquidity.available_book() == before_book

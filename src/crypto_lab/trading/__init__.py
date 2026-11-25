@@ -1,5 +1,6 @@
 """Paper-trading domain services."""
 
+from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
 from crypto_lab.trading.execution import ExecutionAttempt, ExecutionRecord, ExecutionSimulator
 from crypto_lab.trading.ledger import (
     AccountLedger,
@@ -7,6 +8,10 @@ from crypto_lab.trading.ledger import (
     create_paper_account,
 )
 from crypto_lab.trading.liquidity import LiquidityError, SimulatedLiquidityView
+from crypto_lab.trading.market_execution import (
+    MarketExecutionResult,
+    OrderBookExecutionService,
+)
 from crypto_lab.trading.matching import (
     FillLeg,
     MatchPlan,
@@ -39,7 +44,11 @@ __all__ = [
     "LiquidityError",
     "MatchPlan",
     "MatchStatus",
+    "MarketRules",
+    "MarketRuleViolation",
+    "MarketExecutionResult",
     "OrderService",
+    "OrderBookExecutionService",
     "OrderSide",
     "OrderStatus",
     "OrderType",

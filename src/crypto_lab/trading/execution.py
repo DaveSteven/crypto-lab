@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import Field, model_validator
 
 from crypto_lab.models import DataQualityStatus, MarketEventEnvelope, Ticker
+from crypto_lab.trading.constraints import MarketRules
 from crypto_lab.trading.ledger import InsufficientBalanceError
 from crypto_lab.trading.liquidity import SimulatedLiquidityView
 from crypto_lab.trading.matching import MatchPlan, MatchStatus
@@ -107,6 +108,7 @@ class ExecutionSimulator:
         plan: MatchPlan,
         *,
         fee_rate: Decimal,
+        market_rules: MarketRules,
         liquidity: SimulatedLiquidityView,
         consumption_id: str,
     ) -> tuple[ExecutionRecord, ...]:
@@ -121,6 +123,10 @@ class ExecutionSimulator:
         remaining_order_quantity = order.quantity - order.filled_quantity
         if plan.requested_quantity != remaining_order_quantity:
             raise ValueError("match plan must cover the remaining order quantity")
+        liquidity_book = liquidity.available_book()
+        if liquidity_book.instrument_id != order.instrument_id:
+            raise ValueError("liquidity instrument does not match order instrument")
+        market_rules.validate(plan)
         liquidity.validate_consumption(plan, consumption_id=consumption_id)
         if plan.status is MatchStatus.NO_FILL:
             self.orders.cancel(order_id)
