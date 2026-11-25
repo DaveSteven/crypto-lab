@@ -60,6 +60,14 @@ python scripts/analyze_spreads.py
 
 默认不假设未知手续费或再平衡成本，因此净收益为 `null`。只有显式提供完整成本参数时，工具才会生成标记为假设的净收益估算。
 
+运行有界稳定性采集：
+
+```bash
+python scripts/run_stability_experiment.py
+```
+
+默认运行 300 秒；多交易所短时功能测试应显式使用 `--duration-seconds 60`。超过 300 秒的长期实验应作为独立进程执行，结束后再单独分析生成的 `summary.json`。脚本支持文件轮换、总容量限制和 `--log-level` 配置。
+
 ## 当前目录
 
 ```text
