@@ -6,9 +6,9 @@ from collections.abc import Callable
 from decimal import Decimal
 from uuid import uuid4
 
+from crypto_lab.trading.clock import Clock, SystemClock
 from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.ledger import AccountLedger
-from crypto_lab.trading.models import utc_now_ms
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
 
 
@@ -33,10 +33,10 @@ class OrderService:
         self,
         ledger: AccountLedger,
         *,
-        clock: Callable[[], int] = utc_now_ms,
+        clock: Clock | Callable[[], int] | None = None,
     ) -> None:
         self.ledger = ledger
-        self._clock = clock
+        self._clock = SystemClock() if clock is None else clock
         self._orders: dict[str, PaperOrder] = {}
         self._next_order_sequence = 1
 
@@ -96,7 +96,7 @@ class OrderService:
             reserved_amount = quantity
 
         order_id = str(uuid4())
-        now_ms = self._clock()
+        now_ms = self._now_utc_ms()
         order_sequence = self._next_order_sequence
         order = PaperOrder(
             order_id=order_id,
@@ -128,7 +128,7 @@ class OrderService:
             raise InvalidOrderTransitionError(f"cannot enter market in {order.status} state")
         if order.market_entry_ts_ms is not None:
             raise InvalidOrderTransitionError("order has already entered the market")
-        entry_ts_ms = self._clock() if market_entry_ts_ms is None else market_entry_ts_ms
+        entry_ts_ms = self._now_utc_ms() if market_entry_ts_ms is None else market_entry_ts_ms
         if entry_ts_ms < order.submitted_ts_ms:
             raise ValueError("market entry time cannot precede submission time")
         entered = order.model_copy(
@@ -145,7 +145,7 @@ class OrderService:
         if remaining_reservation > 0:
             self.ledger.release(order.reserved_asset, remaining_reservation, order.order_id)
         canceled = order.model_copy(
-            update={"status": OrderStatus.CANCELED, "updated_ts_ms": self._clock()}
+            update={"status": OrderStatus.CANCELED, "updated_ts_ms": self._now_utc_ms()}
         )
         self._orders[order_id] = canceled
         return canceled
@@ -182,3 +182,8 @@ class OrderService:
             raise TypeError(f"{name} must be Decimal")
         if value < 0:
             raise ValueError(f"{name} cannot be negative")
+
+    def _now_utc_ms(self) -> int:
+        if isinstance(self._clock, Clock):
+            return self._clock.now_utc_ms()
+        return self._clock()

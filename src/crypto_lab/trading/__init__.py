@@ -1,5 +1,12 @@
 """Paper-trading domain services."""
 
+from crypto_lab.trading.clock import (
+    Clock,
+    ExecutionLatency,
+    LatencyPreset,
+    ManualClock,
+    SystemClock,
+)
 from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
 from crypto_lab.trading.execution import (
     ExecutionAttempt,
@@ -50,7 +57,9 @@ from crypto_lab.trading.trade_through import (
 __all__ = [
     "AccountLedger",
     "AssetBalance",
+    "Clock",
     "ExecutionAttempt",
+    "ExecutionLatency",
     "ExecutionRecord",
     "ExecutionSimulator",
     "FeeSchedule",
@@ -60,6 +69,7 @@ __all__ = [
     "InvalidOrderTransitionError",
     "LedgerEntry",
     "LedgerReason",
+    "LatencyPreset",
     "LiquidityError",
     "LiquidityRole",
     "LimitOrderEntryResult",
@@ -68,6 +78,7 @@ __all__ = [
     "MatchStatus",
     "MarketRules",
     "MarketRuleViolation",
+    "ManualClock",
     "MarketExecutionResult",
     "OrderService",
     "OrderBookExecutionService",
@@ -81,6 +92,7 @@ __all__ = [
     "PositionValuation",
     "SlippageMetrics",
     "SimulatedLiquidityView",
+    "SystemClock",
     "TimeInForce",
     "TradeAllocation",
     "TradeProcessingResult",
