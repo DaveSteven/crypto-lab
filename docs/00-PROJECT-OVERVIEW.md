@@ -651,6 +651,6 @@ Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现
 - [x] 完成 Phase 1 Task 1.4 持仓与估值。
 - [x] 完成 Phase 1 Task 1.5 订单簿驱动的模拟撮合与滑点。
 - [x] 完成 Phase 1 Task 1.6 限价单实时自动撮合。
-- [ ] 完成 Phase 1 Task 1.7 模拟执行延迟。
+- [x] 完成 Phase 1 Task 1.7 模拟执行延迟。
 - [ ] 完成 Phase 1 Task 1.8 交易引擎集成与一致性验证。
 

@@ -4,9 +4,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.2 |
+| 文档版本 | V0.3 |
 | 对应任务 | Phase 1 Task 1.5～1.8 |
-| 状态 | Active / Task 1.5～1.6 已实现 |
+| 状态 | Active / Task 1.5～1.7 已实现 |
 | 设计范围 | Python 领域层 |
 
 本文档同时记录设计与实施状态；只有明确标记“已完成”的能力才视为已经实现。核心原则是：AI 负责开发和解释，程序负责采集和计算。
@@ -239,6 +239,8 @@ TRADE_THROUGH 按真实成交事件的剩余可分配数量做部分分配，不
 
 `ExecutionScheduler` 接收已校验并冻结资金的订单，记录提交和计划执行时间，管理待执行队列，在 Clock 到期后读取当时最新有效 Market State，再交给市价或限价 Matcher。调度器还负责取消、异常终止及防重复出队。
 
+实现状态：已完成。`SystemClock` 提供 UTC 事件时间及单调耗时，`ManualClock` 用于无真实等待的确定性测试。调度器按 `(scheduled_execution_ts_ms, order_sequence)` 排序，0ms 订单也必须经过相同调度流程；取消和到期执行以串行调用顺序决定胜者。
+
 ### C.3 生命周期与时间字段
 
 ```text
@@ -248,27 +250,36 @@ Submit → Validate → Reserve Funds → Pending Execution
        → Update Order & Portfolio
 ```
 
-建议新增：`submitted_ts_ms`、`scheduled_execution_ts_ms`、`market_entry_ts_ms`、`executed_ts_ms`、`completed_ts_ms`、`configured_latency_ms`、`actual_simulated_delay_ms`、`submission_quote_event_id`、`execution_quote_event_id`。最终命名须与 Canonical Schema 一致。
+已实现：`submitted_ts_ms`、`scheduled_execution_ts_ms`、`market_entry_ts_ms`、`executed_ts_ms`、`configured_latency_ms`、`actual_simulated_delay_ms`、`scheduler_lag_ms`、`submission_quote_event_id`、`execution_quote_event_id`。其中配置延迟、实际提交至执行时间及调度器超期滞后分别记录，不解释为真实网络延迟。
 
-现有状态不足以明确区分待执行与持续挂单。建议新增 `PENDING_EXECUTION`，到达市场后使用 `OPEN` 表示活动挂单；是否采用此核心模型变更须由项目负责人确认。
+项目负责人已确认并实现 `PENDING_EXECUTION`：完成校验和冻结但尚未进入模拟市场；到期后 `OPEN` 只表示已进入市场的活动订单或 GTC 挂单。
 
 ### C.4 资金、取消及未来数据
 
 - 提交后立即冻结，延迟期间不可复用。
 - 延迟期间允许取消并释放资金；取消胜出后调度器必须幂等跳过。
-- 执行时价格上涨不得透支。建议在明确预算内部分成交并取消剩余；整单拒绝是可选策略，需项目负责人确认。
+- 延迟市价买单必须显式提供 `max_quote_budget`；执行时逐档包含 Taker Fee 计算可成交量，并按 quantity increment 向下调整。
+- 价格上涨时只在冻结预算内成交；不足以完成全单则保留实际 Fill、取消剩余并释放资金，不使用其他可用余额追加预算。
+- 市价卖单受冻结基础资产和 Bid 深度限制，部分成交后同样取消剩余。
+- GTC 限价单到期后先做 Taker 撮合，剩余进入活动挂单并继续使用 TRADE_THROUGH，而非套用市价单取消规则。
 - Phase 1 不模拟取消请求自身的网络延迟，此限制写入实验元数据。
 - 选择行情的条件是系统接收时间不晚于决策时间；不得使用之后收到的行情，即使其交易所事件时间更早。
 
+无订单簿、过期、失效、断线或未来行情时，尚未入场订单以 `MARKET_DATA_UNAVAILABLE` 拒绝并释放冻结资金，不进行无期限自动重试。撮合或结算失败时不消耗模拟流动性。
+
 ### C.5 Task 1.7 验收标准
 
-- [ ] 支持配置延迟，预定时间前不得成交。
-- [ ] 执行时使用最新有效但非未来行情。
-- [ ] 延迟期间资金冻结且支持取消。
-- [ ] 资金不足按确认策略处理且不透支。
-- [ ] ManualClock 测试无真实等待。
-- [ ] 记录提交及执行参考行情，正确计算价格漂移和总滑点。
-- [ ] 所有相关测试通过。
+- [x] 支持配置延迟，预定时间前不得成交。
+- [x] 执行时使用最新有效但非未来行情。
+- [x] 延迟期间资金冻结且支持取消。
+- [x] 资金不足按确认策略处理且不透支。
+- [x] 市价买单执行符合显式预算、手续费、步长及最小限制。
+- [x] 市价卖单深度不足时部分成交并释放剩余资产。
+- [x] GTC 限价单未成交部分继续挂单。
+- [x] ManualClock 测试无真实等待。
+- [x] 记录提交及执行参考行情，正确计算价格漂移和总滑点。
+- [x] 撮合失败不错误消耗模拟流动性。
+- [x] Task 1.1～1.6 回归及 Task 1.7 测试全部通过。
 
 ## Part D — 交易引擎集成与一致性
 
@@ -409,8 +420,8 @@ Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、Postg
 
 ## Part I — 待项目负责人确认
 
-1. 是否新增 `PENDING_EXECUTION`，并以 `OPEN` 表示进入市场后的活动订单。
-2. 延迟后市价买单预算不足时，采用“预算内部分成交并取消剩余”（建议）还是整单拒绝。
+1. ~~是否新增 `PENDING_EXECUTION`，并以 `OPEN` 表示进入市场后的活动订单。~~ 已确认并实现。
+2. ~~延迟后市价买单预算不足时采用何种策略。~~ 已确认预算内部分成交并取消剩余。
 3. ~~TRADE_THROUGH 是否正式作为 Phase 1 默认限价成交模型。~~ 已由 ADR-0002 确认。
 4. ~~被动挂单成交是否固定使用限价，及是否支持价格改善。~~ 已确认使用限价且 Phase 1 不改善。
 5. ~~Maker/Taker 费率来源、版本管理及买单冻结缓冲。~~ 已确认显式版本配置并按较高费率冻结。
@@ -421,3 +432,5 @@ Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、Postg
 ## Part J — 架构决策记录
 
 新增 Proposed ADR：[`decisions/0001-execution-engine-event-processing.md`](decisions/0001-execution-engine-event-processing.md)。原因是串行事件模型、权威来源、原子边界和流动性隔离会同时影响 Task 1.5～1.9，并决定未来回放及持久化兼容方式；在项目负责人确认前保持 Proposed，不视为已实现。
+
+Task 1.7 的状态及预算策略由 Accepted ADR [`decisions/0003-delayed-execution-budget.md`](decisions/0003-delayed-execution-budget.md) 记录。
