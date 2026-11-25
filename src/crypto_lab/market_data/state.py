@@ -33,6 +33,7 @@ class OrderBookView:
     quality_status: DataQualityStatus
     synchronized: bool
     source_connected: bool
+    synchronization_generation: int = 1
 
 
 class OrderBookMarketState:
@@ -46,6 +47,7 @@ class OrderBookMarketState:
         if event.event_type != "ORDER_BOOK_SNAPSHOT":
             raise ValueError("snapshot event requires ORDER_BOOK_SNAPSHOT type")
         payload = event.payload
+        previous = self._books.get((event.exchange_id, event.instrument_id))
         view = OrderBookView(
             exchange_id=event.exchange_id,
             instrument_id=event.instrument_id,
@@ -59,6 +61,9 @@ class OrderBookMarketState:
             quality_status=event.quality_status,
             synchronized=payload.synchronized,
             source_connected=True,
+            synchronization_generation=(
+                previous.synchronization_generation + 1 if previous is not None else 1
+            ),
         )
         self._books[(event.exchange_id, event.instrument_id)] = view
         return view
@@ -114,6 +119,7 @@ class OrderBookMarketState:
             quality_status=quality,
             synchronized=synchronized,
             source_connected=current.source_connected,
+            synchronization_generation=current.synchronization_generation,
         )
         self._books[key] = view
         return view

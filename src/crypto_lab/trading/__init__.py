@@ -6,6 +6,7 @@ from crypto_lab.trading.ledger import (
     InsufficientBalanceError,
     create_paper_account,
 )
+from crypto_lab.trading.liquidity import LiquidityError, SimulatedLiquidityView
 from crypto_lab.trading.matching import (
     FillLeg,
     MatchPlan,
@@ -35,6 +36,7 @@ __all__ = [
     "InvalidOrderTransitionError",
     "LedgerEntry",
     "LedgerReason",
+    "LiquidityError",
     "MatchPlan",
     "MatchStatus",
     "OrderService",
@@ -47,6 +49,7 @@ __all__ = [
     "Position",
     "PositionValuation",
     "SlippageMetrics",
+    "SimulatedLiquidityView",
     "create_paper_account",
     "match_market_order",
 ]
