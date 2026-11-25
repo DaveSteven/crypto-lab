@@ -104,14 +104,33 @@ class OrderService:
         order = self.get(order_id)
         if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
             raise InvalidOrderTransitionError(f"cannot cancel order in {order.status} state")
-        if order.filled_quantity != 0:
-            raise NotImplementedError("partial-fill reservation release belongs to Task 1.3")
-        self.ledger.release(order.reserved_asset, order.reserved_amount, order.order_id)
+        remaining_reservation = self.remaining_reservation(order)
+        if remaining_reservation > 0:
+            self.ledger.release(order.reserved_asset, remaining_reservation, order.order_id)
         canceled = order.model_copy(
             update={"status": OrderStatus.CANCELED, "updated_ts_ms": utc_now_ms()}
         )
         self._orders[order_id] = canceled
         return canceled
+
+    def replace_after_execution(self, order: PaperOrder) -> None:
+        current = self.get(order.order_id)
+        if current.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+            raise InvalidOrderTransitionError("order is not executable")
+        if order.filled_quantity <= current.filled_quantity:
+            raise InvalidOrderTransitionError("execution must increase filled quantity")
+        self._orders[order.order_id] = order
+
+    @staticmethod
+    def remaining_reservation(order: PaperOrder) -> Decimal:
+        if order.side is OrderSide.BUY:
+            consumed = order.cumulative_quote_amount + order.cumulative_fee
+            remaining = order.reserved_amount - consumed
+        else:
+            remaining = order.quantity - order.filled_quantity
+        if remaining < 0:
+            raise ValueError("order consumed more than its reservation")
+        return remaining
 
     @staticmethod
     def _require_decimal_positive(value: Decimal, name: str) -> None:

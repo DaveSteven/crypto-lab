@@ -44,28 +44,44 @@ class AccountLedger:
         return tuple(self._balances[asset] for asset in sorted(self._balances))
 
     def append(self, entry: LedgerEntry) -> None:
-        if entry.entry_id in self._entry_ids:
-            raise ValueError(f"duplicate ledger entry ID: {entry.entry_id}")
-        if entry.account_id != self.account.account_id:
-            raise ValueError("ledger entry belongs to a different account")
-        if entry.exchange_id is not self.account.exchange_id:
-            raise ValueError("ledger entry belongs to a different exchange")
+        self.append_many((entry,))
 
-        current = self.balance(entry.asset)
-        updated_available = current.available + entry.available_delta
-        updated_locked = current.locked + entry.locked_delta
-        if updated_available < 0 or updated_locked < 0:
-            raise InsufficientBalanceError(
-                f"insufficient {current.asset} balance for ledger entry {entry.entry_id}"
+    def append_many(self, entries: Iterable[LedgerEntry]) -> None:
+        pending = tuple(entries)
+        if not pending:
+            raise ValueError("at least one ledger entry is required")
+        pending_ids = [entry.entry_id for entry in pending]
+        if len(set(pending_ids)) != len(pending_ids):
+            raise ValueError("duplicate ledger entry ID within batch")
+        duplicate_ids = self._entry_ids.intersection(pending_ids)
+        if duplicate_ids:
+            raise ValueError(f"duplicate ledger entry ID: {sorted(duplicate_ids)[0]}")
+
+        simulated = dict(self._balances)
+        for entry in pending:
+            if entry.account_id != self.account.account_id:
+                raise ValueError("ledger entry belongs to a different account")
+            if entry.exchange_id is not self.account.exchange_id:
+                raise ValueError("ledger entry belongs to a different exchange")
+            current = simulated.get(
+                entry.asset,
+                AssetBalance(asset=entry.asset, available=Decimal(0), locked=Decimal(0)),
             )
-        updated = AssetBalance(
-            asset=current.asset,
-            available=updated_available,
-            locked=updated_locked,
-        )
-        self._balances[current.asset] = updated
-        self._entries.append(entry)
-        self._entry_ids.add(entry.entry_id)
+            updated_available = current.available + entry.available_delta
+            updated_locked = current.locked + entry.locked_delta
+            if updated_available < 0 or updated_locked < 0:
+                raise InsufficientBalanceError(
+                    f"insufficient {current.asset} balance for ledger entry {entry.entry_id}"
+                )
+            simulated[current.asset] = AssetBalance(
+                asset=current.asset,
+                available=updated_available,
+                locked=updated_locked,
+            )
+
+        self._balances = simulated
+        self._entries.extend(pending)
+        self._entry_ids.update(pending_ids)
 
     def reserve(self, asset: str, amount: Decimal, reference_id: str) -> LedgerEntry:
         self._require_positive(amount)

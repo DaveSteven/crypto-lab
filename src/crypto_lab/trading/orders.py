@@ -38,6 +38,9 @@ class PaperOrder(FrozenModel):
     reserved_asset: str = Field(min_length=1)
     reserved_amount: Decimal = Field(gt=0)
     filled_quantity: Decimal = Field(default=Decimal(0), ge=0)
+    cumulative_quote_amount: Decimal = Field(default=Decimal(0), ge=0)
+    cumulative_fee: Decimal = Field(default=Decimal(0), ge=0)
+    average_fill_price: Decimal | None = Field(default=None, gt=0)
     status: OrderStatus
     created_ts_ms: int = Field(ge=0)
     updated_ts_ms: int = Field(ge=0)
@@ -50,4 +53,8 @@ class PaperOrder(FrozenModel):
             raise ValueError("market orders cannot define limit_price")
         if self.filled_quantity > self.quantity:
             raise ValueError("filled quantity cannot exceed requested quantity")
+        if self.filled_quantity == 0 and self.average_fill_price is not None:
+            raise ValueError("unfilled order cannot have an average fill price")
+        if self.filled_quantity > 0 and self.average_fill_price is None:
+            raise ValueError("filled order requires an average fill price")
         return self

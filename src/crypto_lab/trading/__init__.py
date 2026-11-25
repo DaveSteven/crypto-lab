@@ -1,5 +1,6 @@
 """Paper-trading domain services."""
 
+from crypto_lab.trading.execution import ExecutionAttempt, ExecutionRecord, ExecutionSimulator
 from crypto_lab.trading.ledger import (
     AccountLedger,
     InsufficientBalanceError,
@@ -12,6 +13,9 @@ from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOr
 __all__ = [
     "AccountLedger",
     "AssetBalance",
+    "ExecutionAttempt",
+    "ExecutionRecord",
+    "ExecutionSimulator",
     "InsufficientBalanceError",
     "InvalidOrderTransitionError",
     "LedgerEntry",
