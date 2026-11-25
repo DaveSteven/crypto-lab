@@ -44,6 +44,14 @@ python scripts/probe_websocket.py
 
 默认并发观察六家交易所 12 秒，并分别记录 Ticker、订单簿快照、增量、序列状态、心跳和数据时效性。Partial 或 Unsynced 结果不得用于交易分析。
 
+获取并标准化六家交易所的实时 Ticker：
+
+```bash
+python scripts/normalize_tickers.py
+```
+
+标准化结果写入本地 `data/normalized/`，Decimal 在 JSON 中保存为字符串，缺失字段保存为 `null`。
+
 ## 当前目录
 
 ```text

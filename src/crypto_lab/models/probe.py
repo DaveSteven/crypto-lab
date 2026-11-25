@@ -1,16 +1,8 @@
 """Models for evidence collected from real public API probes."""
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class TransportType(StrEnum):
-    """Transport used to retrieve market data."""
-
-    REST = "REST"
-    WEBSOCKET = "WEBSOCKET"
-    FILE = "FILE"
+from crypto_lab.models.enums import TransportType
 
 
 class APIProbeResult(BaseModel):

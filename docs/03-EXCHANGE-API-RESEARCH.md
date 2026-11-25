@@ -119,3 +119,30 @@ Coinbase Exchange WebSocket 的 `level2` 订阅在本次实际请求中返回需
 
 OKX 已使用不带 `:8443` 的 443 端口地址。根据官方变更说明，公共网络的 8443 端口已于 2026-10-31 停止接受连接。
 
+## 8. Ticker 标准化验证
+
+验证时间约为 2026-11-25 08:00 UTC（17:00 JST）。使用六家交易所的真实公开 REST Ticker 各生成一条 Canonical Market Event。
+
+| 交易所 | Canonical Instrument | 质量状态 | Exchange Timestamp |
+|---|---|---|---|
+| Binance | `binance:SPOT:BTC/USDT` | VALID | null |
+| OKX | `okx:SPOT:BTC/USDT` | VALID | provided |
+| Bybit | `bybit:SPOT:BTC/USDT` | VALID | provided |
+| Kraken | `kraken:SPOT:BTC/USDT` | VALID | null |
+| Coinbase | `coinbase:SPOT:BTC/USDT` | VALID | provided |
+| bitbank | `bitbank:SPOT:BTC/JPY` | VALID | provided |
+
+本轮 6/6 条记录标准化成功。证据文件：
+
+`data/normalized/2026-11-25/ticker-rest-080057.jsonl`
+
+验证结果：
+
+- 价格、数量和成交量在 JSON 中均为十进制字符串。
+- 缺失字段保留为 `null`；Binance 与 Kraken 未提供可用事件时间时，没有用本地时间冒充。
+- Instrument ID 统一为 `{exchange}:SPOT:{BASE}/{QUOTE}`。
+- Bid 高于 Ask 时标记为 INVALID；缺少可执行 Bid 或 Ask 时标记为 INCOMPLETE。
+- 重复事件和同一数据流中的时间倒退由有界 `EventSequenceTracker` 检测。
+
+时间戳仍需按接口语义解释。例如 Coinbase REST Ticker 的 `time` 与最近成交相关，不能单独作为最佳买卖报价的新鲜度证明。行情过期判断必须结合接收时间、连接状态和具体频道语义。
+
