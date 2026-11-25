@@ -1,0 +1,413 @@
+# Crypto Lab — 交易引擎专项设计
+
+## 0. 文档信息
+
+| 属性 | 内容 |
+|---|---|
+| 文档版本 | V0.1 |
+| 对应任务 | Phase 1 Task 1.5～1.8 |
+| 状态 | Draft / 待项目负责人确认 |
+| 设计范围 | Python 领域层 |
+
+本文档是架构审查与技术设计，不表示相关业务能力已经实现。核心原则是：AI 负责开发和解释，程序负责采集和计算。
+
+## 1. 现状审查
+
+### 1.1 实际审查范围
+
+- 规范与路线：`AGENTS.md`、`docs/AGENT.md`、`docs/00-PROJECT-OVERVIEW.md`、`docs/02-MARKET-DATA-SCHEMA.md`、`docs/06-PHASE-1-PLAN.md`。
+- 领域代码：`trading/models.py`、`ledger.py`、`orders.py`、`order_service.py`、`execution.py`、`portfolio.py`。
+- 行情代码：`models/common.py`、`models/ticker.py`、`market_data/normalizers.py`、`market_data/ordering.py`、`scripts/probe_rest.py`、`scripts/probe_websocket.py`。
+- 测试与提交：Task 1.1～1.4 的交易测试，以及提交 `ce380a5`、`e535fec`、`352e33e`、`b0840e4`。
+
+### 1.2 当前能力
+
+| 能力 | 当前实现 | 结论 |
+|---|---|---|
+| 余额及冻结 | Account Ledger 批量校验后原子追加流水 | 可复用 |
+| 订单 | 市价/限价、部分成交、取消、冻结/释放 | 可扩展 |
+| 成交 | 调用方传入单一价格和数量；可多次部分成交 | 需增加撮合计划 |
+| 限价保护 | 买不高于限价、卖不低于限价 | 保留 |
+| 手续费 | 显式费率，统一计价资产收费 | 需增加 Maker/Taker 角色 |
+| 持仓 | 移动平均成本，可应用多条部分成交 | 可复用 |
+| 估值 | 有效 Ticker 的 Bid | 保留 |
+| 行情模型 | 已实现 Ticker；文档定义 OrderBook/Trade | 实现落后于文档 |
+| WebSocket | 交易所协议探测及部分序列检查 | 不是可复用 Market State |
+
+### 1.3 文档与代码差异
+
+1. Market Data Schema 已定义 `OrderBookSnapshot`、`OrderBookDelta`、`Trade`，但 Python Canonical Model、Normalizer 及统一 Market State 尚未实现。
+2. Phase 0 脚本能探测 REST 深度和 WebSocket 订单簿消息，但不提供交易引擎可直接消费的规范化、持续同步订单簿；真实 Trade 事件也未形成统一采集链路。
+3. `ExecutionSimulator` 可通过多次调用形成多个部分成交并累计平均价，但不能一次接收多档 `FillPlan`，也不能保证多档成交、流动性扣减与结算共同原子提交。
+4. 当前 `execute_from_ticker` 只校验品种及质量状态，没有订单簿同步、序列、过期、交易所及市场类型的完整有效性门禁。
+5. Portfolio 能正确应用多个部分成交并可由成交历史重建，但它在当前 Execution Simulator 原子边界之外。
+6. Order 状态没有明确的待执行状态、挂单入场时间及 GTC/TIF；`OPEN` 同时承担过多语义。
+7. 市价买单按提交参考价和预计费率冻结资金，延迟后价格上涨可能使结算失败，尚未定义“按预算部分成交”或“整单拒绝”的统一规则。
+
+上述差异均不得仅靠文档声称已经完成，必须在相应 Task 中实现并测试。
+
+## Part A — 订单簿驱动的模拟撮合
+
+### A.1 设计目标
+
+根据执行时有效真实订单簿自动确定可成交数量、逐档价格及数量、总金额、VWAP、剩余数量、滑点、手续费及模拟成交状态。前端只提交订单意图，不得指定成交价格、成交数量或伪造成交结果。
+
+建议增加不可变值对象：
+
+- `FillLeg(price, quantity, quote_amount, book_level_key)`
+- `MatchPlan(order_id, book_event_id, book_version, fills, remaining_quantity, status)`
+- `SlippageMetrics(submission_reference_price, execution_reference_price, book_slippage_amount, price_drift, total_slippage_amount, slippage_rate)`
+
+`MatchPlan` 是撮合计算结果，不是已经结算的成交；只有原子提交成功后才生成 Fill History。
+
+### A.2 市价单撮合规则
+
+- 市价买单按 Ask 从低到高逐档撮合。
+- 市价卖单按 Bid 从高到低逐档撮合。
+- 达到目标数量或有效深度耗尽时停止。
+- 深度不足允许部分成交；剩余部分默认取消并释放相应冻结资金。
+- 零流动性不得伪造档位，结果为未成交并释放冻结资金。
+- 每档价格和数量必须满足交易所价格精度、数量精度、最小数量及最小名义金额约束。
+
+撮合器只读取 `SimulatedLiquidityView`，不得修改原始市场事件。
+
+### A.3 VWAP 计算
+
+```text
+total_notional = sum(fill_price × fill_quantity)
+total_filled_quantity = sum(fill_quantity)
+vwap = total_notional / total_filled_quantity
+```
+
+所有输入、中间值及结果使用 `Decimal`。零成交数量时 `vwap = null`，不得执行除法。
+
+### A.4 滑点计算
+
+订单簿滑点反映同一执行时点的深度成本：
+
+```text
+BUY:  book_slippage_amount = (vwap - execution_best_ask) × filled_quantity
+SELL: book_slippage_amount = (execution_best_bid - vwap) × filled_quantity
+```
+
+执行价格漂移反映提交至执行之间的最优可执行报价变化：
+
+```text
+BUY:  price_drift = execution_best_ask - submission_best_ask
+SELL: price_drift = submission_best_bid - execution_best_bid
+```
+
+总滑点以提交时可执行参考报价为基准：
+
+```text
+BUY:  total_slippage_amount = (vwap - submission_best_ask) × filled_quantity
+SELL: total_slippage_amount = (submission_best_bid - vwap) × filled_quantity
+
+reference_notional = submission_reference_price × filled_quantity
+slippage_rate = total_slippage_amount / reference_notional
+```
+
+统一约定：正值表示不利，负值表示有利；手续费单独计算；VWAP 已包含的价格影响不得再次扣款。缺少提交或执行参考报价时，对应指标为 `null`。零成交时全部基于成交的滑点指标为 `null`。
+
+### A.5 模拟流动性消耗
+
+定义三层状态：
+
+1. `ExternalOrderBook`：只读的真实行情投影。
+2. `SimulatedLiquidityView`：按模拟环境隔离的可用流动性。
+3. `LiquidityConsumption`：按环境、行情版本、档位及订单记录已消耗数量。
+
+默认规则：
+
+- 同一 `simulation_environment_id` 的账户和订单共享模拟流动性。
+- 独立对照实验使用不同环境，获得独立视图。
+- 同一行情版本内，撮合成功提交后才扣减流动性；失败必须回滚。
+- 对连续增量的绝对数量更新，`residual_new = max(0, residual_old + external_new - external_old)`；市场数量减少会压低剩余量，市场新增数量才增加剩余量，不能把本地已消耗数量无条件补回。
+- 序列缺口、断线或无连续谱系的新快照使旧视图失效。完成重新同步后建立新 `book_version`；旧版本不得继续成交。
+- 全量重同步代表一个新的可观察市场状态，不等于模拟订单真实冲击已经消失。该近似及重同步策略必须进入实验元数据。
+
+公开市场数据不能提供模拟订单对真实市场的反事实冲击，也不能精确还原隐藏流动性、其他参与者撤单及排队位置；结果只能视为受约束的模拟估计。
+
+### A.6 订单簿有效性校验
+
+出现以下任一情况禁止撮合：订单簿不存在或过期、质量状态非 VALID、未同步、序列缺口、交易所/品种/市场类型不匹配、报价非正或交叉异常、必要时间缺失、数据源断开且超过有效期。
+
+时效阈值从配置读取。Market State 应保留 `event_id`、交易所序列、接收时间、交易所事件时间（若有）、同步状态、质量状态及断线状态。执行时只允许读取 `received_ts_ms <= execution_decision_ts_ms` 的事件。
+
+### A.7 Task 1.5 实施方案
+
+1. **1.5-A Canonical Market State**：实现订单簿/Trade Canonical Model、交易所适配、序列和时效门禁；同步 Schema 文档。
+2. **1.5-B Pure Matcher**：实现无副作用的逐档撮合、VWAP 和滑点计算。
+3. **1.5-C Liquidity View**：实现版本化共享流动性、增量更新及重复消耗保护。
+4. **1.5-D Settlement Adapter**：将 `MatchPlan` 转换为已有结算输入；一次计划内的多档 Fill、流水、订单和流动性共同提交或失败。
+5. **1.5-E Regression & Acceptance**：运行 EX-001～EX-008 及 Task 1.1～1.4 回归测试。
+
+最小变更方向：保留现有 `ExecutionRecord` 及结算公式；增加 `FillLeg/MatchPlan` 和批量执行入口。现有调用方传价的 `execute` 仅保留为内部兼容或测试辅助入口，不对前端开放。
+
+### A.8 Task 1.5 验收标准
+
+- [ ] 支持市价买入和卖出的多档撮合。
+- [ ] 正确计算 VWAP、订单簿滑点、价格漂移及总滑点。
+- [ ] 深度不足时部分成交，无流动性时不成交。
+- [ ] 不重复消耗同一模拟流动性。
+- [ ] 无效、过期、未同步或序列缺口订单簿不得成交。
+- [ ] 校验交易所精度及最小交易限制。
+- [ ] 复用已有成交结算，手续费和滑点不重复计算。
+- [ ] 所有相关测试通过。
+
+## Part B — 限价单实时自动撮合
+
+### B.1 设计目标与限价规则
+
+系统根据实时订单簿及真实 Trade 事件决定限价单成交，不依赖人工传入结果：
+
+```text
+BUY:  execution_price <= limit_price
+SELL: execution_price >= limit_price
+```
+
+任何模式均不得突破限价。
+
+### B.2 Marketable Limit Order
+
+立即可成交的限价单按当前订单簿撮合：买单只消耗不高于限价的 Ask，卖单只消耗不低于限价的 Bid。立即成交部分使用 Taker Fee；GTC 剩余部分进入挂单状态。
+
+### B.3 Resting Limit Order
+
+未立即成交部分监听有效 `OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。Phase 1 只要求 GTC；IOC/FOK 在模型明确扩展前不实现。订单进入市场必须记录确定性 `market_entry_ts_ms` 和本地序列。
+
+### B.4 成交模型
+
+- `TOUCH_FILL`：报价满足限价时按模拟可用深度尝试成交，仅用于理想化实验，不代表真实排队。
+- `TRADE_THROUGH`：Phase 1 建议默认。挂买单观察低于买入限价且方向语义匹配的真实成交；挂卖单观察高于卖出限价且方向语义匹配的真实成交。只有订单入场后接收且未处理的事件可用。
+- `QUEUE_SIMULATION`：未来增强，Phase 1 不实现。
+
+TRADE_THROUGH 必须按真实成交事件的剩余可分配数量做部分分配，不能因价格穿透就完成全单。同一模拟环境中，一个 Trade 事件的数量按本地订单优先级共享，不能给多个订单重复完整分配。被动成交原则上使用挂单价格；价格改善规则需另行确认。
+
+### B.5 本地优先级与幂等
+
+同一环境采用价格优先、相同价格按 `market_entry_ts_ms`、相同时间按确定性订单序列排序。这只是本地模拟订单优先级，不代表真实交易所排队位置。
+
+Market State 为每个事件生成内部稳定 `event_id`。处理记录使用 `(simulation_environment_id, event_id, order_id)`，事件还维护共享的 `remaining_allocatable_quantity`，从而同时避免单订单重放和多订单重复分配。
+
+### B.6 手续费及冻结
+
+- 立即吃单使用 Taker Fee，挂单被动成交使用 Maker Fee。
+- 费率必须来自显式版本化配置；未知费率禁止成交，不能默认为零。
+- 继续遵循当前计价资产收费规则，除非项目负责人确认变更。
+- 限价买单冻结限价名义金额及显式费用缓冲；价格改善后的多余资金保留在冻结余额，直至订单完成或取消时释放。
+- 部分成交后只保留剩余订单所需冻结；取消释放全部剩余冻结。
+
+### B.7 Task 1.6 验收标准
+
+- [ ] 支持立即成交限价单、持续挂单、部分成交及取消。
+- [ ] 行情事件自动触发撮合且不突破限价。
+- [ ] 正确处理剩余冻结资金和 Maker/Taker Fee。
+- [ ] 同一 Trade 事件不被重复处理或超额分配。
+- [ ] 默认模型不过度乐观，已取消订单不得成交。
+- [ ] 所有相关测试通过。
+
+## Part C — 模拟执行延迟
+
+### C.1 参数与限制
+
+| 配置 | 延迟 |
+|---|---:|
+| IDEAL | 0ms |
+| FAST | 50ms |
+| NORMAL | 100ms |
+| MEDIUM | 250ms |
+| SLOW | 500ms |
+| HIGH | 1000ms |
+| CUSTOM | 自定义 |
+
+默认暂定 100ms。这些是实验参数，不代表真实交易所延迟。延迟期间市场可变化，禁止用提交时旧报价直接完成延迟后的撮合。
+
+### C.2 Clock 与 Scheduler
+
+定义 `Clock.now_utc_ms()` 和单调耗时接口，候选实现为 `SystemClock`、测试用 `ManualClock`、未来 `ReplayClock`。核心领域不得直接调用 `sleep`。
+
+`ExecutionScheduler` 接收已校验并冻结资金的订单，记录提交和计划执行时间，管理待执行队列，在 Clock 到期后读取当时最新有效 Market State，再交给市价或限价 Matcher。调度器还负责取消、异常终止及防重复出队。
+
+### C.3 生命周期与时间字段
+
+```text
+Submit → Validate → Reserve Funds → Pending Execution
+       → Execution Time Reached → Validate Latest Market Data
+       → Market/Limit Matching → Atomic Settlement
+       → Update Order & Portfolio
+```
+
+建议新增：`submitted_ts_ms`、`scheduled_execution_ts_ms`、`market_entry_ts_ms`、`executed_ts_ms`、`completed_ts_ms`、`configured_latency_ms`、`actual_simulated_delay_ms`、`submission_quote_event_id`、`execution_quote_event_id`。最终命名须与 Canonical Schema 一致。
+
+现有状态不足以明确区分待执行与持续挂单。建议新增 `PENDING_EXECUTION`，到达市场后使用 `OPEN` 表示活动挂单；是否采用此核心模型变更须由项目负责人确认。
+
+### C.4 资金、取消及未来数据
+
+- 提交后立即冻结，延迟期间不可复用。
+- 延迟期间允许取消并释放资金；取消胜出后调度器必须幂等跳过。
+- 执行时价格上涨不得透支。建议在明确预算内部分成交并取消剩余；整单拒绝是可选策略，需项目负责人确认。
+- Phase 1 不模拟取消请求自身的网络延迟，此限制写入实验元数据。
+- 选择行情的条件是系统接收时间不晚于决策时间；不得使用之后收到的行情，即使其交易所事件时间更早。
+
+### C.5 Task 1.7 验收标准
+
+- [ ] 支持配置延迟，预定时间前不得成交。
+- [ ] 执行时使用最新有效但非未来行情。
+- [ ] 延迟期间资金冻结且支持取消。
+- [ ] 资金不足按确认策略处理且不透支。
+- [ ] ManualClock 测试无真实等待。
+- [ ] 记录提交及执行参考行情，正确计算价格漂移和总滑点。
+- [ ] 所有相关测试通过。
+
+## Part D — 交易引擎集成与一致性
+
+### D.1 逻辑架构
+
+```text
+Canonical Market Data → Market State → Order/Risk Validation
+                      → Execution Scheduler → Market/Limit Matcher
+                      → Execution Unit of Work → Account Ledger
+                                               → Fill History
+                                               → Order Model
+                                               → Portfolio Projection
+                                               → Liquidity Consumption
+```
+
+这是职责划分，不要求每项成为独立 Package。优先在现有 `trading` 与 `market_data` 结构内做最小必要扩展。
+
+### D.2 权威来源
+
+- Account Ledger：余额权威来源。
+- Order Model：订单生命周期权威来源。
+- Fill History：成交事实权威来源。
+- Portfolio：可由 Fill History 重建的投影。
+- Market State：当前有效行情投影。
+- Execution Scheduler：待执行集合权威来源。
+- Liquidity Consumption：指定模拟环境内剩余流动性的权威记录。
+
+禁止再建立另一套可独立修改的余额或持仓。
+
+### D.3 原子一致性与恢复
+
+一次提交边界包含订单状态、全部 Fill、手续费、资金流水、冻结变化、流动性消耗及持仓投影。领域层先使用内存 Unit of Work：验证所有预条件，计算不可变候选变更，全部成功后一次提交；任何失败不暴露部分状态。
+
+Portfolio 属可重建投影。若当前阶段不能与事实记录同一原子提交，则先原子提交 Ledger、Order、Fill 和 Liquidity，再用 Fill History 重建或重放 Portfolio，并明确记录投影失败。Task 1.9 再映射至数据库事务及 Outbox/投影恢复机制。
+
+### D.4 幂等与事件顺序
+
+需要唯一键或处理记录保护：`order_id` 执行轮次、`execution_id`、Ledger `entry_id`、市场 `event_id`、流动性消费 ID。已取消/完成订单不得重新进入执行。
+
+Phase 1 使用单模拟环境串行事件处理器，按以下确定性顺序：
+
+1. 以接收时间、数据源序列、内部到达序列排序市场事件。
+2. 同一逻辑时刻先应用已经到达的市场事件，再执行到期订单。
+3. 取消与执行按进入串行队列的顺序决定胜者。
+4. 同一账户和同一流动性视图的竞争订单按调度序列处理。
+5. 重复事件忽略；乱序或序列缺口使相关 Market State 失效并触发重同步。
+
+该模型便于测试与历史回放；Phase 1 不引入分布式并发撮合。
+
+### D.5 Task 1.8 验收标准
+
+- [ ] 完整市价买卖、限价挂单、部分成交及取消流程。
+- [ ] 延迟期间价格变化及取消行为正确。
+- [ ] 订单簿失效后拒绝成交，多订单正确竞争流动性。
+- [ ] 余额不足、手续费、流水和持仓计算正确。
+- [ ] 流水可重建余额，成交可重建持仓。
+- [ ] 不产生负余额、超额卖出或重复成交。
+- [ ] 结果可确定性复现。
+- [ ] Task 1.1～1.4 回归测试全部通过。
+
+## Part E — 测试设计
+
+### E.1 原则
+
+核心金融计算全部使用固定 MOCK 行情做单元测试，不依赖交易所网络。真实 API 验证与领域测试分离。延迟测试使用 ManualClock，不做真实等待。每个测试必须断言业务结果及失败后的无副作用状态。
+
+### E.2 测试矩阵
+
+| Test ID | 测试内容 | Task |
+|---|---|---|
+| EX-001 | 单档市价买入 | 1.5 |
+| EX-002 | 多档市价买入 | 1.5 |
+| EX-003 | 多档市价卖出 | 1.5 |
+| EX-004 | 订单簿深度不足 | 1.5 |
+| EX-005 | 订单簿不存在 | 1.5 |
+| EX-006 | 订单簿过期 | 1.5 |
+| EX-007 | VWAP 及滑点计算 | 1.5 |
+| EX-008 | 重复流动性消耗 | 1.5 |
+| EX-009 | 立即成交限价单 | 1.6 |
+| EX-010 | 非立即成交限价单 | 1.6 |
+| EX-011 | 价格触及但不保证成交 | 1.6 |
+| EX-012 | 价格穿透后的保守成交 | 1.6 |
+| EX-013 | 限价单部分成交 | 1.6 |
+| EX-014 | 限价单取消 | 1.6 |
+| EX-015 | Maker/Taker 手续费 | 1.6 |
+| EX-016 | 0ms 执行延迟 | 1.7 |
+| EX-017 | 100ms 执行延迟 | 1.7 |
+| EX-018 | 延迟期间价格变化 | 1.7 |
+| EX-019 | 延迟期间资金不足 | 1.7 |
+| EX-020 | 延迟期间取消订单 | 1.7 |
+| EX-021 | 重复市场成交事件 | 1.8 |
+| EX-022 | 重复订单执行 | 1.8 |
+| EX-023 | 结算失败及一致性恢复 | 1.8 |
+| EX-024 | 多订单竞争流动性 | 1.8 |
+| EX-025 | 交易后余额与持仓重建 | 1.8 |
+| EX-026 | 禁止未来行情泄漏 | 1.7/1.8 |
+
+具体测试数量可随实现增加，但不得删除对应风险覆盖。
+
+### E.3 Token Efficiency
+
+- 默认真实接口验证 15 秒，多交易所采集验证 60 秒，稳定性测试不超过 300 秒。
+- 长期实验独立运行，不持续轮询，不逐条输出高频行情。
+- 原始数据写文件并生成结构化报告；优先分析报告，异常时才读必要样本。
+- 短时功能测试与长期稳定性实验分离，短测不能替代长期验收。
+- ManualClock 负责延迟测试，禁止为了 50～1000ms 参数做真实等待。
+
+## Part F — Web 应用开发边界
+
+Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、PostgreSQL、完整 Docker、自动策略、跨交易所自动套利、AI/LLM API 或真实资金接口。
+
+后续方向：前端 React + TypeScript + Vite + Tailwind CSS，图表 Lightweight Charts，后端 FastAPI，数据库 PostgreSQL + Alembic，实时通信 WebSocket。依赖、Schema、API Contract 和布局在对应 Task 独立设计。
+
+## Part G — 兼容性及影响范围
+
+| 现有模块 | 兼容方式 | 预计影响 |
+|---|---|---|
+| `AccountLedger` | 保持余额权威与批量原子校验 | 增加 Unit of Work 协调接口 |
+| `PaperOrder` | 保留数量、限价和累计字段 | 增加状态、时间、TIF/撮合元数据需确认 |
+| `OrderService` | 保留冻结/取消规则 | 接收行情引用、费用配置及预算策略 |
+| `ExecutionSimulator` | 保留结算公式和限价保护 | 增加 MatchPlan 批量提交；限制直接传价入口 |
+| `ExecutionRecord` | 继续作为 Fill History 基础 | 增加 maker/taker、行情及计划关联字段 |
+| `PortfolioEngine` | 保留移动平均成本和重建能力 | 纳入投影恢复或 Unit of Work |
+| Ticker | 继续用于估值及提交参考 | 不再作为深度撮合依据 |
+| Market Data | 扩展 Canonical OrderBook/Trade | 新增同步 Market State 和有效性门禁 |
+
+## Part H — Canonical Schema 评估
+
+需要实现现有文档已定义但代码缺失的 `PriceLevel`、`OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。预计还需在兼容扩展中明确：
+
+- 内部稳定事件 ID 与交易所原始 ID 的区分。
+- `book_version` 或等价的同步世代标识。
+- 数据源连接/同步状态及失效原因。
+- 事件接收顺序和可选交易所事件时间。
+- Trade 主动方向未知时的显式状态，禁止猜测。
+
+这些字段先形成 Schema 变更提案；未确认前不修改已确认金融规则。
+
+## Part I — 待项目负责人确认
+
+1. 是否新增 `PENDING_EXECUTION`，并以 `OPEN` 表示进入市场后的活动订单。
+2. 延迟后市价买单预算不足时，采用“预算内部分成交并取消剩余”（建议）还是整单拒绝。
+3. TRADE_THROUGH 是否正式作为 Phase 1 默认限价成交模型。
+4. 被动挂单成交是否固定使用限价，及是否支持价格改善。
+5. Maker/Taker 费率来源、版本管理及买单冻结缓冲。
+6. 同一模拟环境共享流动性的默认边界，以及对照实验的隔离规则。
+7. 全量重同步后的流动性新版本、冷却或恢复策略。
+8. Canonical Schema 的新增元数据及 Trade 主动方向缺失策略。
+
+## Part J — 架构决策记录
+
+新增 Proposed ADR：[`decisions/0001-execution-engine-event-processing.md`](decisions/0001-execution-engine-event-processing.md)。原因是串行事件模型、权威来源、原子边界和流动性隔离会同时影响 Task 1.5～1.9，并决定未来回放及持久化兼容方式；在项目负责人确认前保持 Proposed，不视为已实现。
