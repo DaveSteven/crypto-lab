@@ -136,7 +136,7 @@ slippage_rate = total_slippage_amount / reference_notional
 
 ### A.7 Task 1.5 实施方案
 
-1. **1.5-A Canonical Market State**：实现订单簿/Trade Canonical Model、交易所适配、序列和时效门禁；同步 Schema 文档。
+1. **1.5-A Canonical Market State（部分完成）**：已实现订单簿/Trade Canonical Model、绝对数量增量 Market State、序列和时效门禁；各交易所 Adapter 留待接入真实数据源时按官方协议实现。
 2. **1.5-B Pure Matcher**：实现无副作用的逐档撮合、VWAP 和滑点计算。
 3. **1.5-C Liquidity View**：实现版本化共享流动性、增量更新及重复消耗保护。
 4. **1.5-D Settlement Adapter**：将 `MatchPlan` 转换为已有结算输入；一次计划内的多档 Fill、流水、订单和流动性共同提交或失败。

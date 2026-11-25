@@ -336,6 +336,15 @@ Instrument ID 格式：
 - 检测到增量数据缺口时必须停止使用当前订单簿，并重新同步。
 - 实际返回深度不足时不得虚构剩余档位。
 
+### 8.5 实现状态
+
+Phase 1 Task 1.5-A 已实现 `PriceLevel`、`OrderBookSnapshot`、`OrderBookDelta`
+Canonical Model，以及基于快照和绝对数量增量的内存 Market State。Market State 会拒绝
+未同步、序列缺口、过期、未来接收、数据源断开、无双边报价及质量状态非 VALID 的订单簿。
+
+当前实现不表示各交易所增量协议已经统一接入。交易所 Adapter 仍须按官方协议完成初始快照、
+Sequence、Checksum 及重同步，再生成 Canonical Event。
+
 ## 9. Trade
 
 表示市场中已经发生的实际成交。
@@ -354,6 +363,9 @@ Instrument ID 格式：
 - trade_id 的唯一性范围由交易所协议决定。
 - 交易所未提供 trade_id 时，不得伪造交易所标识。
 - 推导出的 quote_amount 必须注明计算来源。
+
+Canonical `Trade` Model 已实现，并保留 `UNKNOWN` 主动成交方向；交易所未提供或无法可靠
+推导方向时不得猜测。真实 Trade Adapter 及持续采集链路尚未实现。
 
 ## 10. Candle
 

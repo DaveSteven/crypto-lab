@@ -2,5 +2,16 @@
 
 from crypto_lab.market_data.normalizers import normalize_ticker
 from crypto_lab.market_data.ordering import EventSequenceTracker
+from crypto_lab.market_data.state import (
+    InvalidOrderBookStateError,
+    OrderBookMarketState,
+    OrderBookView,
+)
 
-__all__ = ["EventSequenceTracker", "normalize_ticker"]
+__all__ = [
+    "EventSequenceTracker",
+    "InvalidOrderBookStateError",
+    "OrderBookMarketState",
+    "OrderBookView",
+    "normalize_ticker",
+]

@@ -23,6 +23,12 @@ class DataSourceType(StrEnum):
     SYNTHETIC = "SYNTHETIC"
 
 
+class TradeSide(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+    UNKNOWN = "UNKNOWN"
+
+
 class TransportType(StrEnum):
     REST = "REST"
     WEBSOCKET = "WEBSOCKET"
