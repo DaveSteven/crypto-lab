@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field, model_validator
 
@@ -13,7 +13,7 @@ from crypto_lab.trading.constraints import MarketRules
 from crypto_lab.trading.ledger import InsufficientBalanceError
 from crypto_lab.trading.liquidity import SimulatedLiquidityView
 from crypto_lab.trading.matching import MatchPlan, MatchStatus
-from crypto_lab.trading.models import FrozenModel, LedgerEntry, LedgerReason, utc_now_ms
+from crypto_lab.trading.models import FrozenModel, LedgerEntry, LedgerReason
 from crypto_lab.trading.order_service import OrderService, split_instrument
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
 
@@ -142,11 +142,13 @@ class ExecutionSimulator:
             return ()
 
         _, base_asset, quote_asset = split_instrument(order.instrument_id)
-        executed_ts_ms = utc_now_ms() if executed_ts_ms is None else executed_ts_ms
+        executed_ts_ms = (
+            self.orders.ledger.clock.now_utc_ms() if executed_ts_ms is None else executed_ts_ms
+        )
         records: list[ExecutionRecord] = []
         entries: list[LedgerEntry] = []
         for fill in plan.fills:
-            execution_id = str(uuid4())
+            execution_id = self.orders.ledger.id_generator.next_id("execution")
             fee_amount = fill.quote_amount * fee_rate
             records.append(
                 ExecutionRecord(
@@ -249,11 +251,13 @@ class ExecutionSimulator:
             return ()
 
         _, base_asset, quote_asset = split_instrument(order.instrument_id)
-        executed_ts_ms = utc_now_ms() if executed_ts_ms is None else executed_ts_ms
+        executed_ts_ms = (
+            self.orders.ledger.clock.now_utc_ms() if executed_ts_ms is None else executed_ts_ms
+        )
         records: list[ExecutionRecord] = []
         entries: list[LedgerEntry] = []
         for fill in plan.fills:
-            execution_id = str(uuid4())
+            execution_id = self.orders.ledger.id_generator.next_id("execution")
             fee_amount = fill.quote_amount * fee_rate
             records.append(
                 ExecutionRecord(
@@ -343,8 +347,8 @@ class ExecutionSimulator:
         self._validate_limit_price(order, price)
 
         _, base_asset, quote_asset = split_instrument(order.instrument_id)
-        execution_id = str(uuid4())
-        executed_ts_ms = utc_now_ms()
+        execution_id = self.orders.ledger.id_generator.next_id("execution")
+        executed_ts_ms = self.orders.ledger.clock.now_utc_ms()
         quote_amount = price * quantity
         fee_amount = quote_amount * fee_rate
         new_filled_quantity = order.filled_quantity + quantity
@@ -502,8 +506,8 @@ class ExecutionSimulator:
         self._executions.append(record)
         return record
 
-    @staticmethod
     def _settlement_entries(
+        self,
         order: PaperOrder,
         execution_id: str,
         base_asset: str,
@@ -515,7 +519,7 @@ class ExecutionSimulator:
     ) -> list[LedgerEntry]:
         if order.side is OrderSide.BUY:
             entries = [
-                ExecutionSimulator._entry(
+                self._entry(
                     order,
                     execution_id,
                     quote_asset,
@@ -523,7 +527,7 @@ class ExecutionSimulator:
                     reason=LedgerReason.TRADE_SETTLEMENT,
                     created_ts_ms=executed_ts_ms,
                 ),
-                ExecutionSimulator._entry(
+                self._entry(
                     order,
                     execution_id,
                     base_asset,
@@ -535,7 +539,7 @@ class ExecutionSimulator:
             if fee_amount > 0:
                 entries.insert(
                     1,
-                    ExecutionSimulator._entry(
+                    self._entry(
                         order,
                         execution_id,
                         quote_asset,
@@ -546,7 +550,7 @@ class ExecutionSimulator:
                 )
             return entries
         entries = [
-            ExecutionSimulator._entry(
+            self._entry(
                 order,
                 execution_id,
                 base_asset,
@@ -554,7 +558,7 @@ class ExecutionSimulator:
                 reason=LedgerReason.TRADE_SETTLEMENT,
                 created_ts_ms=executed_ts_ms,
             ),
-            ExecutionSimulator._entry(
+            self._entry(
                 order,
                 execution_id,
                 quote_asset,
@@ -565,7 +569,7 @@ class ExecutionSimulator:
         ]
         if fee_amount > 0:
             entries.append(
-                ExecutionSimulator._entry(
+                self._entry(
                     order,
                     execution_id,
                     quote_asset,
@@ -576,8 +580,8 @@ class ExecutionSimulator:
             )
         return entries
 
-    @staticmethod
     def _entry(
+        self,
         order: PaperOrder,
         execution_id: str,
         asset: str,
@@ -588,7 +592,20 @@ class ExecutionSimulator:
         created_ts_ms: int,
     ) -> LedgerEntry:
         return LedgerEntry(
-            entry_id=str(uuid4()),
+            entry_id=str(
+                uuid5(
+                    NAMESPACE_URL,
+                    ":".join(
+                        (
+                            "crypto-lab-ledger",
+                            order.account_id,
+                            execution_id,
+                            asset,
+                            reason.value,
+                        )
+                    ),
+                )
+            ),
             account_id=order.account_id,
             exchange_id=order.instrument_id.split(":", maxsplit=1)[0],
             asset=asset,

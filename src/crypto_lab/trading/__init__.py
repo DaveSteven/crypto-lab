@@ -16,6 +16,7 @@ from crypto_lab.trading.execution import (
     LiquidityRole,
 )
 from crypto_lab.trading.fees import FeeSchedule
+from crypto_lab.trading.identity import DeterministicIdGenerator, IdGenerator, RandomIdGenerator
 from crypto_lab.trading.ledger import (
     AccountLedger,
     InsufficientBalanceError,
@@ -62,6 +63,7 @@ __all__ = [
     "AssetBalance",
     "Clock",
     "DelayedExecutionOutcome",
+    "DeterministicIdGenerator",
     "ExecutionAttempt",
     "ExecutionLatency",
     "ExecutionRecord",
@@ -71,6 +73,7 @@ __all__ = [
     "FillLeg",
     "InsufficientBalanceError",
     "InsufficientPositionError",
+    "IdGenerator",
     "InvalidOrderTransitionError",
     "LedgerEntry",
     "LedgerReason",
@@ -95,6 +98,7 @@ __all__ = [
     "PortfolioEngine",
     "Position",
     "PositionValuation",
+    "RandomIdGenerator",
     "ScheduledExecution",
     "ScheduledOrderExecutor",
     "SchedulerRunResult",

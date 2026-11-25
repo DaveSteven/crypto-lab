@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from decimal import Decimal
-from uuid import uuid4
 
 from crypto_lab.models import ExchangeId
+from crypto_lab.trading.clock import Clock, SystemClock
+from crypto_lab.trading.identity import IdGenerator, RandomIdGenerator
 from crypto_lab.trading.models import (
     AssetBalance,
     LedgerEntry,
     LedgerReason,
     PaperAccount,
-    utc_now_ms,
 )
 
 
@@ -21,8 +21,17 @@ class InsufficientBalanceError(ValueError):
 
 
 class AccountLedger:
-    def __init__(self, account: PaperAccount, entries: Iterable[LedgerEntry] = ()) -> None:
+    def __init__(
+        self,
+        account: PaperAccount,
+        entries: Iterable[LedgerEntry] = (),
+        *,
+        id_generator: IdGenerator | None = None,
+        clock: Clock | None = None,
+    ) -> None:
         self.account = account
+        self.id_generator = id_generator or RandomIdGenerator()
+        self.clock = clock or SystemClock()
         self._entries: list[LedgerEntry] = []
         self._entry_ids: set[str] = set()
         self._balances: dict[str, AssetBalance] = {}
@@ -113,7 +122,7 @@ class AccountLedger:
         reference_id: str | None,
     ) -> LedgerEntry:
         entry = LedgerEntry(
-            entry_id=str(uuid4()),
+            entry_id=self.id_generator.next_id("ledger-entry"),
             account_id=self.account.account_id,
             exchange_id=self.account.exchange_id,
             asset=asset,
@@ -121,7 +130,7 @@ class AccountLedger:
             locked_delta=locked_delta,
             reason=reason,
             reference_id=reference_id,
-            created_ts_ms=utc_now_ms(),
+            created_ts_ms=self.clock.now_utc_ms(),
         )
         self.append(entry)
         return entry
@@ -140,15 +149,19 @@ def create_paper_account(
     name: str = "Paper Account",
     initial_asset: str = "USDT",
     initial_amount: Decimal = Decimal("10000"),
+    id_generator: IdGenerator | None = None,
+    clock: Clock | None = None,
 ) -> AccountLedger:
     AccountLedger._require_positive(initial_amount)
+    generator = id_generator or RandomIdGenerator()
+    effective_clock = clock or SystemClock()
     account = PaperAccount(
-        account_id=str(uuid4()),
+        account_id=generator.next_id("account"),
         name=name,
         exchange_id=exchange_id,
-        created_ts_ms=utc_now_ms(),
+        created_ts_ms=effective_clock.now_utc_ms(),
     )
-    ledger = AccountLedger(account)
+    ledger = AccountLedger(account, id_generator=generator, clock=effective_clock)
     ledger._append_change(
         initial_asset,
         available_delta=initial_amount,

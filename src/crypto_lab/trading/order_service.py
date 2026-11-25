@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
-from uuid import uuid4
 
 from crypto_lab.trading.clock import Clock, SystemClock
 from crypto_lab.trading.fees import FeeSchedule
@@ -107,7 +106,7 @@ class OrderService:
             reserved_fee_rate = Decimal(0)
             reserved_amount = quantity
 
-        order_id = str(uuid4())
+        order_id = self.ledger.id_generator.next_id("order")
         now_ms = self._now_utc_ms()
         order_sequence = self._next_order_sequence
         order = PaperOrder(
