@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Test and quality-tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime data and logs
+data/raw/*
+data/normalized/*
+data/quality/*
+data/probes/*
+data/experiments/*
+data/reports/*
+logs/
+*.log
+
+# Keep data directory structure in Git
+!data/raw/.gitkeep
+!data/normalized/.gitkeep
+!data/quality/.gitkeep
+!data/probes/.gitkeep
+!data/experiments/.gitkeep
+!data/reports/.gitkeep
+
