@@ -4,12 +4,12 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 对应任务 | Phase 1 Task 1.5～1.8 |
-| 状态 | Draft / 待项目负责人确认 |
+| 状态 | Active / Task 1.5～1.6 已实现 |
 | 设计范围 | Python 领域层 |
 
-本文档是架构审查与技术设计，不表示相关业务能力已经实现。核心原则是：AI 负责开发和解释，程序负责采集和计算。
+本文档同时记录设计与实施状态；只有明确标记“已完成”的能力才视为已经实现。核心原则是：AI 负责开发和解释，程序负责采集和计算。
 
 ## 1. 现状审查
 
@@ -176,21 +176,23 @@ SELL: execution_price >= limit_price
 
 ### B.3 Resting Limit Order
 
-未立即成交部分监听有效 `OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。Phase 1 只要求 GTC；IOC/FOK 在模型明确扩展前不实现。订单进入市场必须记录确定性 `market_entry_ts_ms` 和本地序列。
+未立即成交部分由有效 `Trade` 触发被动撮合；订单簿仅用于入场时的立即撮合，不以 Last Price、K 线或报价触碰直接完成被动订单。Phase 1 只实现 GTC；IOC/FOK 不实现。订单进入市场记录确定性 `market_entry_ts_ms` 和本地序列。
 
 ### B.4 成交模型
 
 - `TOUCH_FILL`：报价满足限价时按模拟可用深度尝试成交，仅用于理想化实验，不代表真实排队。
-- `TRADE_THROUGH`：Phase 1 建议默认。挂买单观察低于买入限价且方向语义匹配的真实成交；挂卖单观察高于卖出限价且方向语义匹配的真实成交。只有订单入场后接收且未处理的事件可用。
+- `TRADE_THROUGH`：Phase 1 默认。挂买单只接受价格严格低于限价且主动方向为 SELL 的真实成交；挂卖单只接受价格严格高于限价且主动方向为 BUY 的真实成交。等于限价、UNKNOWN 方向、入场前、无可靠交易所时间、无效、过期、重复、乱序或错误品种事件均不成交。
 - `QUEUE_SIMULATION`：未来增强，Phase 1 不实现。
 
-TRADE_THROUGH 必须按真实成交事件的剩余可分配数量做部分分配，不能因价格穿透就完成全单。同一模拟环境中，一个 Trade 事件的数量按本地订单优先级共享，不能给多个订单重复完整分配。被动成交原则上使用挂单价格；价格改善规则需另行确认。
+TRADE_THROUGH 按真实成交事件的剩余可分配数量做部分分配，不能因价格穿透就完成全单。同一模拟环境中，一个 Trade 事件的数量按本地订单优先级共享，不能给多个订单重复完整分配。被动成交固定使用订单限价，Phase 1 不提供价格改善。
+
+实现状态：已完成。OKX `trades` 公开频道中的 `side` 按官方定义解释为 Taker Side；聚合消息的 `sz` 作为本事件唯一可分配数量，`tradeId` 用于源级去重。15 秒真实接口验证共归一化 105 条成交，Trade ID 无重复，方向均可识别。
 
 ### B.5 本地优先级与幂等
 
 同一环境采用价格优先、相同价格按 `market_entry_ts_ms`、相同时间按确定性订单序列排序。这只是本地模拟订单优先级，不代表真实交易所排队位置。
 
-Market State 为每个事件生成内部稳定 `event_id`。处理记录使用 `(simulation_environment_id, event_id, order_id)`，事件还维护共享的 `remaining_allocatable_quantity`，从而同时避免单订单重放和多订单重复分配。
+同一环境内按交易所、品种和交易所 `tradeId` 去重；缺少 `tradeId` 时退化为 `event_id`。执行标识由模拟环境、Trade 身份及订单身份确定性生成。事件处理期间维护共享剩余数量，结算成功后才扣减；结算失败保留进度和剩余数量供安全重试。
 
 ### B.6 手续费及冻结
 
@@ -206,12 +208,14 @@ Market State 为每个事件生成内部稳定 `event_id`。处理记录使用 `
 
 ### B.7 Task 1.6 验收标准
 
-- [ ] 支持立即成交限价单、持续挂单、部分成交及取消。
-- [ ] 行情事件自动触发撮合且不突破限价。
-- [ ] 正确处理剩余冻结资金和 Maker/Taker Fee。
-- [ ] 同一 Trade 事件不被重复处理或超额分配。
-- [ ] 默认模型不过度乐观，已取消订单不得成交。
-- [ ] 所有相关测试通过。
+- [x] 支持立即成交限价单、持续挂单、部分成交及取消。
+- [x] 行情事件自动触发撮合且不突破限价。
+- [x] 正确处理剩余冻结资金和 Maker/Taker Fee。
+- [x] 同一 Trade 事件不被重复处理或超额分配。
+- [x] 默认模型不过度乐观，已取消订单不得成交。
+- [x] 无效、过期、未来、乱序、错误品种及入场前事件不得成交。
+- [x] 真实 Trade Adapter 完成短时验证。
+- [x] Task 1.1～1.5 回归及 Task 1.6 测试全部通过。
 
 ## Part C — 模拟执行延迟
 
@@ -383,17 +387,17 @@ Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、Postg
 | 现有模块 | 兼容方式 | 预计影响 |
 |---|---|---|
 | `AccountLedger` | 保持余额权威与批量原子校验 | 增加 Unit of Work 协调接口 |
-| `PaperOrder` | 保留数量、限价和累计字段 | 增加状态、时间、TIF/撮合元数据需确认 |
-| `OrderService` | 保留冻结/取消规则 | 接收行情引用、费用配置及预算策略 |
-| `ExecutionSimulator` | 保留结算公式和限价保护 | 增加 MatchPlan 批量提交；限制直接传价入口 |
-| `ExecutionRecord` | 继续作为 Fill History 基础 | 增加 maker/taker、行情及计划关联字段 |
+| `PaperOrder` | 保留数量、限价和累计字段 | 已增加 GTC、提交/入场时间、费用配置及确定性序列 |
+| `OrderService` | 保留冻结/取消规则 | 已接收显式费用配置和可替换时钟；Task 1.7 再增加调度 |
+| `ExecutionSimulator` | 保留结算公式和限价保护 | 已支持订单簿 MatchPlan 及被动限价成交原子结算 |
+| `ExecutionRecord` | 继续作为 Fill History 基础 | 已增加 Maker/Taker 及市场事件关联字段 |
 | `PortfolioEngine` | 保留移动平均成本和重建能力 | 纳入投影恢复或 Unit of Work |
 | Ticker | 继续用于估值及提交参考 | 不再作为深度撮合依据 |
-| Market Data | 扩展 Canonical OrderBook/Trade | 新增同步 Market State 和有效性门禁 |
+| Market Data | 扩展 Canonical OrderBook/Trade | 已实现订单簿状态、有效性门禁及 OKX Trade Adapter |
 
 ## Part H — Canonical Schema 评估
 
-需要实现现有文档已定义但代码缺失的 `PriceLevel`、`OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。预计还需在兼容扩展中明确：
+已实现 `PriceLevel`、`OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。兼容扩展仍需明确：
 
 - 内部稳定事件 ID 与交易所原始 ID 的区分。
 - `book_version` 或等价的同步世代标识。
@@ -412,7 +416,7 @@ Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、Postg
 5. ~~Maker/Taker 费率来源、版本管理及买单冻结缓冲。~~ 已确认显式版本配置并按较高费率冻结。
 6. 同一模拟环境共享流动性的默认边界，以及对照实验的隔离规则。
 7. 全量重同步后的流动性新版本、冷却或恢复策略。
-8. Canonical Schema 的新增元数据及 Trade 主动方向缺失策略。
+8. Canonical Schema 的其他新增元数据；Trade 主动方向缺失时当前已采取禁止被动成交的保守策略。
 
 ## Part J — 架构决策记录
 
