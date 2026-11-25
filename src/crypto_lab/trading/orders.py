@@ -40,6 +40,7 @@ class PaperOrder(FrozenModel):
     quantity: Decimal = Field(gt=0)
     limit_price: Decimal | None = Field(default=None, gt=0)
     reference_price: Decimal = Field(gt=0)
+    max_quote_budget: Decimal | None = Field(default=None, gt=0)
     reserved_asset: str = Field(min_length=1)
     reserved_amount: Decimal = Field(gt=0)
     filled_quantity: Decimal = Field(default=Decimal(0), ge=0)
@@ -70,6 +71,11 @@ class PaperOrder(FrozenModel):
             raise ValueError("limit orders require limit_price")
         if self.order_type is OrderType.MARKET and self.limit_price is not None:
             raise ValueError("market orders cannot define limit_price")
+        if self.max_quote_budget is not None:
+            if self.order_type is not OrderType.MARKET or self.side is not OrderSide.BUY:
+                raise ValueError("maximum quote budget is only valid for market buys")
+            if self.reserved_amount != self.max_quote_budget:
+                raise ValueError("market buy reservation must equal maximum quote budget")
         if self.filled_quantity > self.quantity:
             raise ValueError("filled quantity cannot exceed requested quantity")
         if self.filled_quantity == 0 and self.average_fill_price is not None:

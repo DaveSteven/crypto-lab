@@ -13,7 +13,7 @@ from crypto_lab.trading.market_execution import OrderBookExecutionService
 from crypto_lab.trading.matching import MatchPlan
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.order_service import OrderService
-from crypto_lab.trading.orders import OrderType, PaperOrder
+from crypto_lab.trading.orders import OrderSide, OrderType, PaperOrder
 
 
 class DelayedExecutionOutcome(FrozenModel):
@@ -66,6 +66,12 @@ class ScheduledOrderExecutor:
         if not consumption_id:
             raise ValueError("consumption ID is required")
         order = self.orders.get(order_id)
+        if (
+            order.order_type is OrderType.MARKET
+            and order.side is OrderSide.BUY
+            and order.max_quote_budget is None
+        ):
+            raise ValueError("scheduled market buy requires an explicit maximum quote budget")
         if order.fee_schedule_id not in {None, fee_schedule.schedule_id}:
             raise ValueError("fee schedule does not match order reservation")
         self._instructions[order_id] = _ExecutionInstruction(

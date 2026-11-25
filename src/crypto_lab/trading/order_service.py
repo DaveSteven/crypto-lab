@@ -58,11 +58,14 @@ class OrderService:
         quantity: Decimal,
         limit_price: Decimal | None = None,
         market_reference_price: Decimal | None = None,
+        max_quote_budget: Decimal | None = None,
         estimated_buy_fee_rate: Decimal = Decimal(0),
         fee_schedule: FeeSchedule | None = None,
     ) -> PaperOrder:
         self._require_decimal_positive(quantity, "quantity")
         self._require_decimal_nonnegative(estimated_buy_fee_rate, "estimated_buy_fee_rate")
+        if max_quote_budget is not None:
+            self._require_decimal_positive(max_quote_budget, "max_quote_budget")
         if fee_schedule is not None and estimated_buy_fee_rate != 0:
             raise ValueError("use either fee_schedule or estimated_buy_fee_rate")
         exchange_id, base_asset, quote_asset = split_instrument(instrument_id)
@@ -75,6 +78,8 @@ class OrderService:
             self._require_decimal_positive(limit_price, "limit_price")
             if market_reference_price is not None:
                 raise ValueError("limit orders do not accept market_reference_price")
+            if max_quote_budget is not None:
+                raise ValueError("limit orders do not accept max_quote_budget")
             reference_price = limit_price
         else:
             if limit_price is not None:
@@ -89,8 +94,15 @@ class OrderService:
             reserved_fee_rate = (
                 fee_schedule.maximum_rate if fee_schedule is not None else estimated_buy_fee_rate
             )
-            reserved_amount = quantity * reference_price * (Decimal(1) + reserved_fee_rate)
+            calculated_reservation = quantity * reference_price * (Decimal(1) + reserved_fee_rate)
+            reserved_amount = (
+                max_quote_budget
+                if order_type is OrderType.MARKET and max_quote_budget
+                else calculated_reservation
+            )
         else:
+            if max_quote_budget is not None:
+                raise ValueError("sell orders do not accept max_quote_budget")
             reserved_asset = base_asset
             reserved_fee_rate = Decimal(0)
             reserved_amount = quantity
@@ -107,6 +119,7 @@ class OrderService:
             quantity=quantity,
             limit_price=limit_price,
             reference_price=reference_price,
+            max_quote_budget=max_quote_budget,
             reserved_asset=reserved_asset,
             reserved_amount=reserved_amount,
             fee_schedule_id=(fee_schedule.schedule_id if fee_schedule is not None else None),

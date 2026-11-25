@@ -9,7 +9,7 @@ from pydantic import Field
 from crypto_lab.trading.clock import Clock, ExecutionLatency
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.order_service import OrderService
-from crypto_lab.trading.orders import OrderStatus, PaperOrder
+from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
 
 
 class ScheduledExecution(FrozenModel):
@@ -42,6 +42,13 @@ class ExecutionScheduler:
     ) -> PaperOrder:
         if order_id in self._scheduled or order_id in self._completed:
             raise ValueError("order has already been scheduled")
+        candidate = self.orders.get(order_id)
+        if (
+            candidate.order_type is OrderType.MARKET
+            and candidate.side is OrderSide.BUY
+            and candidate.max_quote_budget is None
+        ):
+            raise ValueError("scheduled market buy requires an explicit maximum quote budget")
         order = self.orders.schedule_execution(
             order_id,
             configured_latency_ms=latency.milliseconds,

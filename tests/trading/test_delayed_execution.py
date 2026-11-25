@@ -106,6 +106,7 @@ def test_due_market_buy_uses_new_price_and_records_timing() -> None:
         order_type=OrderType.MARKET,
         quantity=Decimal("2"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("202"),
         fee_schedule=FEES,
     )
     register(scheduler, executor, order.order_id)
@@ -137,6 +138,7 @@ def test_market_price_rise_partially_fills_within_budget_then_cancels() -> None:
         order_type=OrderType.MARKET,
         quantity=Decimal("2"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("202"),
         fee_schedule=FEES,
     )
     register(scheduler, executor, order.order_id)
@@ -269,6 +271,7 @@ def test_future_or_stale_book_rejects_and_releases_pending_order() -> None:
         order_type=OrderType.MARKET,
         quantity=Decimal("1"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("101"),
         fee_schedule=FEES,
     )
     register(scheduler, executor, order.order_id)
@@ -293,6 +296,7 @@ def test_stale_book_rejects_without_execution() -> None:
         order_type=OrderType.MARKET,
         quantity=Decimal("1"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("101"),
         fee_schedule=FEES,
     )
     register(scheduler, executor, order.order_id)
@@ -314,6 +318,7 @@ def test_settlement_validation_failure_does_not_consume_liquidity() -> None:
         order_type=OrderType.MARKET,
         quantity=Decimal("1"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("101"),
         fee_schedule=FEES,
     )
     register(scheduler, executor, order.order_id, incompatible_rules)

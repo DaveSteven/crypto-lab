@@ -29,6 +29,7 @@ def place(orders: OrderService):
         order_type=OrderType.MARKET,
         quantity=Decimal("1"),
         market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("100"),
     )
 
 
@@ -49,6 +50,25 @@ def test_pending_execution_metadata_and_not_due_before_schedule() -> None:
     assert scheduler.due() == ()
     clock.advance(99)
     assert scheduler.due() == ()
+
+
+def test_scheduled_market_buy_requires_explicit_budget() -> None:
+    _, orders, scheduler = setup_scheduler()
+    order = orders.place(
+        instrument_id="okx:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        market_reference_price=Decimal("100"),
+    )
+
+    with pytest.raises(ValueError, match="explicit maximum quote budget"):
+        scheduler.schedule(
+            order.order_id,
+            latency=ExecutionLatency(preset=LatencyPreset.NORMAL),
+        )
+
+    assert orders.get(order.order_id).status is OrderStatus.OPEN
 
 
 def test_zero_latency_still_uses_scheduler_flow() -> None:
