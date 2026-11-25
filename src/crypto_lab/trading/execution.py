@@ -407,6 +407,98 @@ class ExecutionSimulator:
         self._executions.append(record)
         return record
 
+    def execute_passive_fill(
+        self,
+        order_id: str,
+        *,
+        quantity: Decimal,
+        fee_rate: Decimal,
+        market_event_id: str,
+        execution_id: str,
+        executed_ts_ms: int,
+    ) -> ExecutionRecord:
+        self._require_decimal_positive(quantity, "quantity")
+        self._require_fee_rate(fee_rate)
+        if not market_event_id or not execution_id:
+            raise ValueError("market event ID and execution ID are required")
+        if executed_ts_ms < 0:
+            raise ValueError("executed_ts_ms cannot be negative")
+        order = self.orders.get(order_id)
+        if order.order_type is not OrderType.LIMIT or order.limit_price is None:
+            raise ValueError("passive fill requires a limit order")
+        if order.market_entry_ts_ms is None:
+            raise ValueError("passive fill requires an order that entered the market")
+        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+            raise ValueError(f"order in {order.status} state cannot execute")
+        remaining_quantity = order.quantity - order.filled_quantity
+        if quantity > remaining_quantity:
+            raise ValueError("execution quantity exceeds remaining order quantity")
+
+        price = order.limit_price
+        _, base_asset, quote_asset = split_instrument(order.instrument_id)
+        quote_amount = price * quantity
+        fee_amount = quote_amount * fee_rate
+        new_filled_quantity = order.filled_quantity + quantity
+        new_quote_amount = order.cumulative_quote_amount + quote_amount
+        new_fee = order.cumulative_fee + fee_amount
+        final_fill = new_filled_quantity == order.quantity
+        updated_order = order.model_copy(
+            update={
+                "filled_quantity": new_filled_quantity,
+                "cumulative_quote_amount": new_quote_amount,
+                "cumulative_fee": new_fee,
+                "average_fill_price": new_quote_amount / new_filled_quantity,
+                "status": OrderStatus.FILLED if final_fill else OrderStatus.PARTIALLY_FILLED,
+                "updated_ts_ms": executed_ts_ms,
+            }
+        )
+        entries = self._settlement_entries(
+            order,
+            execution_id,
+            base_asset,
+            quote_asset,
+            quantity,
+            quote_amount,
+            fee_amount,
+            executed_ts_ms,
+        )
+        try:
+            remaining_reservation = self.orders.remaining_reservation(updated_order)
+        except ValueError as exc:
+            raise InsufficientBalanceError("execution cost exceeds the order reservation") from exc
+        if final_fill and remaining_reservation > 0:
+            entries.append(
+                self._entry(
+                    order,
+                    execution_id,
+                    order.reserved_asset,
+                    available_delta=remaining_reservation,
+                    locked_delta=-remaining_reservation,
+                    reason=LedgerReason.ORDER_RELEASE,
+                    created_ts_ms=executed_ts_ms,
+                )
+            )
+
+        record = ExecutionRecord(
+            execution_id=execution_id,
+            order_id=order.order_id,
+            account_id=order.account_id,
+            instrument_id=order.instrument_id,
+            side=order.side,
+            price=price,
+            quantity=quantity,
+            quote_amount=quote_amount,
+            fee_asset=quote_asset,
+            fee_amount=fee_amount,
+            executed_ts_ms=executed_ts_ms,
+            liquidity_role=LiquidityRole.MAKER,
+            market_event_id=market_event_id,
+        )
+        self.orders.ledger.append_many(entries)
+        self.orders.replace_after_execution(updated_order)
+        self._executions.append(record)
+        return record
+
     @staticmethod
     def _settlement_entries(
         order: PaperOrder,
@@ -419,7 +511,7 @@ class ExecutionSimulator:
         executed_ts_ms: int,
     ) -> list[LedgerEntry]:
         if order.side is OrderSide.BUY:
-            return [
+            entries = [
                 ExecutionSimulator._entry(
                     order,
                     execution_id,
@@ -431,21 +523,26 @@ class ExecutionSimulator:
                 ExecutionSimulator._entry(
                     order,
                     execution_id,
-                    quote_asset,
-                    locked_delta=-fee_amount,
-                    reason=LedgerReason.FEE,
-                    created_ts_ms=executed_ts_ms,
-                ),
-                ExecutionSimulator._entry(
-                    order,
-                    execution_id,
                     base_asset,
                     available_delta=quantity,
                     reason=LedgerReason.TRADE_SETTLEMENT,
                     created_ts_ms=executed_ts_ms,
                 ),
             ]
-        return [
+            if fee_amount > 0:
+                entries.insert(
+                    1,
+                    ExecutionSimulator._entry(
+                        order,
+                        execution_id,
+                        quote_asset,
+                        locked_delta=-fee_amount,
+                        reason=LedgerReason.FEE,
+                        created_ts_ms=executed_ts_ms,
+                    ),
+                )
+            return entries
+        entries = [
             ExecutionSimulator._entry(
                 order,
                 execution_id,
@@ -462,15 +559,19 @@ class ExecutionSimulator:
                 reason=LedgerReason.TRADE_SETTLEMENT,
                 created_ts_ms=executed_ts_ms,
             ),
-            ExecutionSimulator._entry(
-                order,
-                execution_id,
-                quote_asset,
-                available_delta=-fee_amount,
-                reason=LedgerReason.FEE,
-                created_ts_ms=executed_ts_ms,
-            ),
         ]
+        if fee_amount > 0:
+            entries.append(
+                ExecutionSimulator._entry(
+                    order,
+                    execution_id,
+                    quote_asset,
+                    available_delta=-fee_amount,
+                    reason=LedgerReason.FEE,
+                    created_ts_ms=executed_ts_ms,
+                )
+            )
+        return entries
 
     @staticmethod
     def _entry(

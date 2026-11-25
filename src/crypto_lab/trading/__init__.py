@@ -40,6 +40,12 @@ from crypto_lab.trading.portfolio import (
     Position,
     PositionValuation,
 )
+from crypto_lab.trading.trade_through import (
+    TradeAllocation,
+    TradeProcessingResult,
+    TradeProcessingStatus,
+    TradeThroughEngine,
+)
 
 __all__ = [
     "AccountLedger",
@@ -76,6 +82,10 @@ __all__ = [
     "SlippageMetrics",
     "SimulatedLiquidityView",
     "TimeInForce",
+    "TradeAllocation",
+    "TradeProcessingResult",
+    "TradeProcessingStatus",
+    "TradeThroughEngine",
     "create_paper_account",
     "match_market_order",
     "match_limit_order",
