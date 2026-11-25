@@ -47,6 +47,7 @@ from crypto_lab.trading.portfolio import (
     Position,
     PositionValuation,
 )
+from crypto_lab.trading.scheduler import ExecutionScheduler, ScheduledExecution, SchedulerRunResult
 from crypto_lab.trading.trade_through import (
     TradeAllocation,
     TradeProcessingResult,
@@ -62,6 +63,7 @@ __all__ = [
     "ExecutionLatency",
     "ExecutionRecord",
     "ExecutionSimulator",
+    "ExecutionScheduler",
     "FeeSchedule",
     "FillLeg",
     "InsufficientBalanceError",
@@ -90,6 +92,8 @@ __all__ = [
     "PortfolioEngine",
     "Position",
     "PositionValuation",
+    "ScheduledExecution",
+    "SchedulerRunResult",
     "SlippageMetrics",
     "SimulatedLiquidityView",
     "SystemClock",

@@ -23,6 +23,7 @@ class TimeInForce(StrEnum):
 
 
 class OrderStatus(StrEnum):
+    PENDING_EXECUTION = "PENDING_EXECUTION"
     OPEN = "OPEN"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
@@ -50,7 +51,14 @@ class PaperOrder(FrozenModel):
     reserved_fee_rate: Decimal = Field(default=Decimal(0), ge=0, le=1)
     status: OrderStatus
     submitted_ts_ms: int = Field(ge=0)
+    scheduled_execution_ts_ms: int | None = Field(default=None, ge=0)
     market_entry_ts_ms: int | None = Field(default=None, ge=0)
+    executed_ts_ms: int | None = Field(default=None, ge=0)
+    configured_latency_ms: int | None = Field(default=None, ge=0)
+    actual_simulated_delay_ms: int | None = Field(default=None, ge=0)
+    submission_quote_event_id: str | None = Field(default=None, min_length=1)
+    execution_quote_event_id: str | None = Field(default=None, min_length=1)
+    termination_reason: str | None = Field(default=None, min_length=1)
     order_sequence: int = Field(gt=0)
     created_ts_ms: int = Field(ge=0)
     updated_ts_ms: int = Field(ge=0)
@@ -69,6 +77,32 @@ class PaperOrder(FrozenModel):
             raise ValueError("filled order requires an average fill price")
         if self.market_entry_ts_ms is not None and self.market_entry_ts_ms < self.submitted_ts_ms:
             raise ValueError("market entry time cannot precede submission time")
+        if (
+            self.scheduled_execution_ts_ms is not None
+            and self.scheduled_execution_ts_ms < self.submitted_ts_ms
+        ):
+            raise ValueError("scheduled execution cannot precede submission")
+        if self.configured_latency_ms is not None:
+            expected = self.submitted_ts_ms + self.configured_latency_ms
+            if self.scheduled_execution_ts_ms != expected:
+                raise ValueError(
+                    "scheduled execution must equal submission plus configured latency"
+                )
+        if self.executed_ts_ms is not None:
+            if self.scheduled_execution_ts_ms is None:
+                raise ValueError("executed order requires a scheduled execution time")
+            if self.executed_ts_ms < self.scheduled_execution_ts_ms:
+                raise ValueError("execution cannot precede scheduled execution")
+            expected_delay = self.executed_ts_ms - self.submitted_ts_ms
+            if self.actual_simulated_delay_ms != expected_delay:
+                raise ValueError("actual simulated delay is inconsistent with execution time")
+        elif self.actual_simulated_delay_ms is not None:
+            raise ValueError("actual simulated delay requires execution time")
+        if self.status is OrderStatus.PENDING_EXECUTION:
+            if self.scheduled_execution_ts_ms is None or self.configured_latency_ms is None:
+                raise ValueError("pending execution requires schedule metadata")
+            if self.market_entry_ts_ms is not None:
+                raise ValueError("pending execution order cannot have entered the market")
         if self.created_ts_ms != self.submitted_ts_ms:
             raise ValueError("created time must equal submission time")
         return self

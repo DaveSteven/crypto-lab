@@ -124,7 +124,11 @@ class OrderService:
 
     def enter_market(self, order_id: str, *, market_entry_ts_ms: int | None = None) -> PaperOrder:
         order = self.get(order_id)
-        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+        if order.status not in {
+            OrderStatus.PENDING_EXECUTION,
+            OrderStatus.OPEN,
+            OrderStatus.PARTIALLY_FILLED,
+        }:
             raise InvalidOrderTransitionError(f"cannot enter market in {order.status} state")
         if order.market_entry_ts_ms is not None:
             raise InvalidOrderTransitionError("order has already entered the market")
@@ -132,14 +136,22 @@ class OrderService:
         if entry_ts_ms < order.submitted_ts_ms:
             raise ValueError("market entry time cannot precede submission time")
         entered = order.model_copy(
-            update={"market_entry_ts_ms": entry_ts_ms, "updated_ts_ms": entry_ts_ms}
+            update={
+                "status": OrderStatus.OPEN,
+                "market_entry_ts_ms": entry_ts_ms,
+                "updated_ts_ms": entry_ts_ms,
+            }
         )
         self._orders[order_id] = entered
         return entered
 
     def cancel(self, order_id: str) -> PaperOrder:
         order = self.get(order_id)
-        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+        if order.status not in {
+            OrderStatus.PENDING_EXECUTION,
+            OrderStatus.OPEN,
+            OrderStatus.PARTIALLY_FILLED,
+        }:
             raise InvalidOrderTransitionError(f"cannot cancel order in {order.status} state")
         remaining_reservation = self.remaining_reservation(order)
         if remaining_reservation > 0:
@@ -149,6 +161,74 @@ class OrderService:
         )
         self._orders[order_id] = canceled
         return canceled
+
+    def schedule_execution(
+        self,
+        order_id: str,
+        *,
+        configured_latency_ms: int,
+        submission_quote_event_id: str | None,
+    ) -> PaperOrder:
+        order = self.get(order_id)
+        if order.status is not OrderStatus.OPEN or order.market_entry_ts_ms is not None:
+            raise InvalidOrderTransitionError("only a new order can be scheduled")
+        if configured_latency_ms < 0:
+            raise ValueError("configured latency cannot be negative")
+        scheduled_ts_ms = order.submitted_ts_ms + configured_latency_ms
+        pending = order.model_copy(
+            update={
+                "status": OrderStatus.PENDING_EXECUTION,
+                "scheduled_execution_ts_ms": scheduled_ts_ms,
+                "configured_latency_ms": configured_latency_ms,
+                "submission_quote_event_id": submission_quote_event_id,
+            }
+        )
+        self._orders[order_id] = pending
+        return pending
+
+    def record_scheduled_execution(
+        self,
+        order_id: str,
+        *,
+        executed_ts_ms: int,
+        execution_quote_event_id: str | None,
+    ) -> PaperOrder:
+        order = self.get(order_id)
+        if order.status is not OrderStatus.PENDING_EXECUTION:
+            raise InvalidOrderTransitionError("order is not pending execution")
+        if order.scheduled_execution_ts_ms is None:
+            raise InvalidOrderTransitionError("pending order has no execution schedule")
+        if executed_ts_ms < order.scheduled_execution_ts_ms:
+            raise InvalidOrderTransitionError("order is not due")
+        updated = order.model_copy(
+            update={
+                "executed_ts_ms": executed_ts_ms,
+                "actual_simulated_delay_ms": executed_ts_ms - order.submitted_ts_ms,
+                "execution_quote_event_id": execution_quote_event_id,
+                "updated_ts_ms": executed_ts_ms,
+            }
+        )
+        self._orders[order_id] = updated
+        return updated
+
+    def reject(self, order_id: str, *, reason: str) -> PaperOrder:
+        if not reason:
+            raise ValueError("rejection reason is required")
+        order = self.get(order_id)
+        if order.status not in {OrderStatus.PENDING_EXECUTION, OrderStatus.OPEN}:
+            raise InvalidOrderTransitionError(f"cannot reject order in {order.status} state")
+        remaining_reservation = self.remaining_reservation(order)
+        if remaining_reservation > 0:
+            self.ledger.release(order.reserved_asset, remaining_reservation, order.order_id)
+        rejected = order.model_copy(
+            update={
+                "status": OrderStatus.REJECTED,
+                "termination_reason": reason,
+                "updated_ts_ms": self._now_utc_ms(),
+            }
+        )
+        self._orders[order_id] = rejected
+        return rejected
 
     def replace_after_execution(self, order: PaperOrder) -> None:
         current = self.get(order.order_id)
