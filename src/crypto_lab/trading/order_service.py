@@ -1,0 +1,128 @@
+"""Balance-aware placement and cancellation of paper spot orders."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from uuid import uuid4
+
+from crypto_lab.trading.ledger import AccountLedger
+from crypto_lab.trading.models import utc_now_ms
+from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
+
+
+class InvalidOrderTransitionError(ValueError):
+    pass
+
+
+def split_instrument(instrument_id: str) -> tuple[str, str, str]:
+    try:
+        exchange_and_market, symbol = instrument_id.rsplit(":", maxsplit=1)
+        exchange_id, market_type = exchange_and_market.split(":", maxsplit=1)
+        base_asset, quote_asset = symbol.split("/", maxsplit=1)
+    except ValueError as exc:
+        raise ValueError("invalid instrument_id") from exc
+    if market_type != "SPOT" or not all((exchange_id, base_asset, quote_asset)):
+        raise ValueError("only canonical SPOT instruments are supported")
+    return exchange_id, base_asset, quote_asset
+
+
+class OrderService:
+    def __init__(self, ledger: AccountLedger) -> None:
+        self.ledger = ledger
+        self._orders: dict[str, PaperOrder] = {}
+
+    def get(self, order_id: str) -> PaperOrder:
+        try:
+            return self._orders[order_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown order: {order_id}") from exc
+
+    def orders(self) -> tuple[PaperOrder, ...]:
+        return tuple(self._orders.values())
+
+    def place(
+        self,
+        *,
+        instrument_id: str,
+        side: OrderSide,
+        order_type: OrderType,
+        quantity: Decimal,
+        limit_price: Decimal | None = None,
+        market_reference_price: Decimal | None = None,
+        estimated_buy_fee_rate: Decimal = Decimal(0),
+    ) -> PaperOrder:
+        self._require_decimal_positive(quantity, "quantity")
+        self._require_decimal_nonnegative(estimated_buy_fee_rate, "estimated_buy_fee_rate")
+        exchange_id, base_asset, quote_asset = split_instrument(instrument_id)
+        if exchange_id != self.ledger.account.exchange_id.value:
+            raise ValueError("instrument exchange does not match account exchange")
+
+        if order_type is OrderType.LIMIT:
+            if limit_price is None:
+                raise ValueError("limit_price is required for limit orders")
+            self._require_decimal_positive(limit_price, "limit_price")
+            if market_reference_price is not None:
+                raise ValueError("limit orders do not accept market_reference_price")
+            reference_price = limit_price
+        else:
+            if limit_price is not None:
+                raise ValueError("market orders do not accept limit_price")
+            if market_reference_price is None:
+                raise ValueError("market orders require an executable reference price")
+            self._require_decimal_positive(market_reference_price, "market_reference_price")
+            reference_price = market_reference_price
+
+        if side is OrderSide.BUY:
+            reserved_asset = quote_asset
+            reserved_amount = quantity * reference_price * (Decimal(1) + estimated_buy_fee_rate)
+        else:
+            reserved_asset = base_asset
+            reserved_amount = quantity
+
+        order_id = str(uuid4())
+        now_ms = utc_now_ms()
+        order = PaperOrder(
+            order_id=order_id,
+            account_id=self.ledger.account.account_id,
+            instrument_id=instrument_id,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            limit_price=limit_price,
+            reference_price=reference_price,
+            reserved_asset=reserved_asset,
+            reserved_amount=reserved_amount,
+            status=OrderStatus.OPEN,
+            created_ts_ms=now_ms,
+            updated_ts_ms=now_ms,
+        )
+        self.ledger.reserve(reserved_asset, reserved_amount, order_id)
+        self._orders[order_id] = order
+        return order
+
+    def cancel(self, order_id: str) -> PaperOrder:
+        order = self.get(order_id)
+        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+            raise InvalidOrderTransitionError(f"cannot cancel order in {order.status} state")
+        if order.filled_quantity != 0:
+            raise NotImplementedError("partial-fill reservation release belongs to Task 1.3")
+        self.ledger.release(order.reserved_asset, order.reserved_amount, order.order_id)
+        canceled = order.model_copy(
+            update={"status": OrderStatus.CANCELED, "updated_ts_ms": utc_now_ms()}
+        )
+        self._orders[order_id] = canceled
+        return canceled
+
+    @staticmethod
+    def _require_decimal_positive(value: Decimal, name: str) -> None:
+        if not isinstance(value, Decimal):
+            raise TypeError(f"{name} must be Decimal")
+        if value <= 0:
+            raise ValueError(f"{name} must be positive")
+
+    @staticmethod
+    def _require_decimal_nonnegative(value: Decimal, name: str) -> None:
+        if not isinstance(value, Decimal):
+            raise TypeError(f"{name} must be Decimal")
+        if value < 0:
+            raise ValueError(f"{name} cannot be negative")
