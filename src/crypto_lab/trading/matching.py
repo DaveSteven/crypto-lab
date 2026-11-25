@@ -74,6 +74,41 @@ def match_market_order(
     quantity: Decimal,
     submission_reference_price: Decimal | None,
 ) -> MatchPlan:
+    return _match_order_book(
+        book,
+        side=side,
+        quantity=quantity,
+        submission_reference_price=submission_reference_price,
+        limit_price=None,
+    )
+
+
+def match_limit_order(
+    book: OrderBookView,
+    *,
+    side: OrderSide,
+    quantity: Decimal,
+    limit_price: Decimal,
+    submission_reference_price: Decimal | None,
+) -> MatchPlan:
+    _require_positive_decimal(limit_price, "limit_price")
+    return _match_order_book(
+        book,
+        side=side,
+        quantity=quantity,
+        submission_reference_price=submission_reference_price,
+        limit_price=limit_price,
+    )
+
+
+def _match_order_book(
+    book: OrderBookView,
+    *,
+    side: OrderSide,
+    quantity: Decimal,
+    submission_reference_price: Decimal | None,
+    limit_price: Decimal | None,
+) -> MatchPlan:
     _require_positive_decimal(quantity, "quantity")
     if submission_reference_price is not None:
         _require_positive_decimal(submission_reference_price, "submission_reference_price")
@@ -83,6 +118,8 @@ def match_market_order(
     remaining = quantity
     fills: list[FillLeg] = []
     for level in levels:
+        if limit_price is not None and not _within_limit(side, level.price, limit_price):
+            break
         fill_quantity = min(level.quantity, remaining)
         if fill_quantity > 0:
             fills.append(
@@ -119,6 +156,12 @@ def match_market_order(
         status=_status(filled, quantity),
         slippage=slippage,
     )
+
+
+def _within_limit(side: OrderSide, price: Decimal, limit_price: Decimal) -> bool:
+    if side is OrderSide.BUY:
+        return price <= limit_price
+    return price >= limit_price
 
 
 def _slippage(

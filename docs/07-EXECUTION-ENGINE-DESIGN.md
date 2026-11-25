@@ -172,6 +172,8 @@ SELL: execution_price >= limit_price
 
 立即可成交的限价单按当前订单簿撮合：买单只消耗不高于限价的 Ask，卖单只消耗不低于限价的 Bid。立即成交部分使用 Taker Fee；GTC 剩余部分进入挂单状态。
 
+实现状态：已完成。立即撮合复用 Task 1.5 的版本化模拟订单簿流动性；成交记录标记为 Taker，部分成交后订单保持 `PARTIALLY_FILLED` 并继续冻结剩余资金，零成交订单以 `OPEN` 进入挂单状态。
+
 ### B.3 Resting Limit Order
 
 未立即成交部分监听有效 `OrderBookSnapshot`、`OrderBookDelta` 和 `Trade`。Phase 1 只要求 GTC；IOC/FOK 在模型明确扩展前不实现。订单进入市场必须记录确定性 `market_entry_ts_ms` 和本地序列。

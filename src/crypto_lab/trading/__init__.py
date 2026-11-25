@@ -1,12 +1,21 @@
 """Paper-trading domain services."""
 
 from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
-from crypto_lab.trading.execution import ExecutionAttempt, ExecutionRecord, ExecutionSimulator
+from crypto_lab.trading.execution import (
+    ExecutionAttempt,
+    ExecutionRecord,
+    ExecutionSimulator,
+    LiquidityRole,
+)
 from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.ledger import (
     AccountLedger,
     InsufficientBalanceError,
     create_paper_account,
+)
+from crypto_lab.trading.limit_execution import (
+    LimitOrderEntryResult,
+    LimitOrderExecutionService,
 )
 from crypto_lab.trading.liquidity import LiquidityError, SimulatedLiquidityView
 from crypto_lab.trading.market_execution import (
@@ -18,6 +27,7 @@ from crypto_lab.trading.matching import (
     MatchPlan,
     MatchStatus,
     SlippageMetrics,
+    match_limit_order,
     match_market_order,
 )
 from crypto_lab.trading.models import AssetBalance, LedgerEntry, LedgerReason, PaperAccount
@@ -45,6 +55,9 @@ __all__ = [
     "LedgerEntry",
     "LedgerReason",
     "LiquidityError",
+    "LiquidityRole",
+    "LimitOrderEntryResult",
+    "LimitOrderExecutionService",
     "MatchPlan",
     "MatchStatus",
     "MarketRules",
@@ -65,5 +78,6 @@ __all__ = [
     "TimeInForce",
     "create_paper_account",
     "match_market_order",
+    "match_limit_order",
     "normalize_okx_spot_rules",
 ]

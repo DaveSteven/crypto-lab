@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 from uuid import uuid4
 
 from pydantic import Field, model_validator
@@ -17,6 +18,11 @@ from crypto_lab.trading.order_service import OrderService, split_instrument
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
 
 
+class LiquidityRole(StrEnum):
+    MAKER = "MAKER"
+    TAKER = "TAKER"
+
+
 class ExecutionRecord(FrozenModel):
     execution_id: str = Field(min_length=1)
     order_id: str = Field(min_length=1)
@@ -29,6 +35,8 @@ class ExecutionRecord(FrozenModel):
     fee_asset: str = Field(min_length=1)
     fee_amount: Decimal = Field(ge=0)
     executed_ts_ms: int = Field(ge=0)
+    liquidity_role: LiquidityRole = LiquidityRole.TAKER
+    market_event_id: str | None = Field(default=None, min_length=1)
 
 
 class ExecutionAttempt(FrozenModel):
@@ -188,6 +196,112 @@ class ExecutionSimulator:
         except ValueError as exc:
             raise InsufficientBalanceError("execution cost exceeds the order reservation") from exc
         if remaining_reservation > 0:
+            entries.append(
+                self._entry(
+                    order,
+                    consumption_id,
+                    order.reserved_asset,
+                    available_delta=remaining_reservation,
+                    locked_delta=-remaining_reservation,
+                    reason=LedgerReason.ORDER_RELEASE,
+                    created_ts_ms=executed_ts_ms,
+                )
+            )
+
+        self.orders.ledger.append_many(entries)
+        self.orders.replace_after_execution(updated_order)
+        liquidity.consume(plan, consumption_id=consumption_id)
+        self._executions.extend(records)
+        return tuple(records)
+
+    def execute_limit_match_plan(
+        self,
+        order_id: str,
+        plan: MatchPlan,
+        *,
+        fee_rate: Decimal,
+        market_rules: MarketRules,
+        liquidity: SimulatedLiquidityView,
+        consumption_id: str,
+    ) -> tuple[ExecutionRecord, ...]:
+        self._require_fee_rate(fee_rate)
+        order = self.orders.get(order_id)
+        if order.order_type is not OrderType.LIMIT:
+            raise ValueError("limit match requires a limit order")
+        if order.status not in {OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED}:
+            raise ValueError(f"order in {order.status} state cannot execute")
+        if plan.side is not order.side:
+            raise ValueError("match-plan side does not match order side")
+        remaining_order_quantity = order.quantity - order.filled_quantity
+        if plan.requested_quantity != remaining_order_quantity:
+            raise ValueError("match plan must cover the remaining order quantity")
+        liquidity_book = liquidity.available_book()
+        if liquidity_book.instrument_id != order.instrument_id:
+            raise ValueError("liquidity instrument does not match order instrument")
+        market_rules.validate(plan)
+        liquidity.validate_consumption(plan, consumption_id=consumption_id)
+        for fill in plan.fills:
+            self._validate_limit_price(order, fill.price)
+        if plan.status is MatchStatus.NO_FILL:
+            return ()
+
+        _, base_asset, quote_asset = split_instrument(order.instrument_id)
+        executed_ts_ms = utc_now_ms()
+        records: list[ExecutionRecord] = []
+        entries: list[LedgerEntry] = []
+        for fill in plan.fills:
+            execution_id = str(uuid4())
+            fee_amount = fill.quote_amount * fee_rate
+            records.append(
+                ExecutionRecord(
+                    execution_id=execution_id,
+                    order_id=order.order_id,
+                    account_id=order.account_id,
+                    instrument_id=order.instrument_id,
+                    side=order.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    quote_amount=fill.quote_amount,
+                    fee_asset=quote_asset,
+                    fee_amount=fee_amount,
+                    executed_ts_ms=executed_ts_ms,
+                    liquidity_role=LiquidityRole.TAKER,
+                    market_event_id=plan.book_event_id,
+                )
+            )
+            entries.extend(
+                self._settlement_entries(
+                    order,
+                    execution_id,
+                    base_asset,
+                    quote_asset,
+                    fill.quantity,
+                    fill.quote_amount,
+                    fee_amount,
+                    executed_ts_ms,
+                )
+            )
+
+        new_filled_quantity = order.filled_quantity + plan.filled_quantity
+        new_quote_amount = order.cumulative_quote_amount + plan.total_notional
+        plan_fee = sum((record.fee_amount for record in records), Decimal(0))
+        new_fee = order.cumulative_fee + plan_fee
+        final_fill = new_filled_quantity == order.quantity
+        updated_order = order.model_copy(
+            update={
+                "filled_quantity": new_filled_quantity,
+                "cumulative_quote_amount": new_quote_amount,
+                "cumulative_fee": new_fee,
+                "average_fill_price": new_quote_amount / new_filled_quantity,
+                "status": OrderStatus.FILLED if final_fill else OrderStatus.PARTIALLY_FILLED,
+                "updated_ts_ms": executed_ts_ms,
+            }
+        )
+        try:
+            remaining_reservation = self.orders.remaining_reservation(updated_order)
+        except ValueError as exc:
+            raise InsufficientBalanceError("execution cost exceeds the order reservation") from exc
+        if final_fill and remaining_reservation > 0:
             entries.append(
                 self._entry(
                     order,
