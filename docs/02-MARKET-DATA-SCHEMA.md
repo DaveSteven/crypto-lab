@@ -339,7 +339,8 @@ Instrument ID 格式：
 ### 8.5 实现状态
 
 Phase 1 Task 1.5-A 已实现 `PriceLevel`、`OrderBookSnapshot`、`OrderBookDelta`
-Canonical Model，以及基于快照和绝对数量增量的内存 Market State。Market State 会拒绝
+Canonical Model，以及基于快照和绝对数量增量的内存 Market State。OKX `books` Adapter
+已通过 15 秒真实公开接口验证。Market State 会拒绝
 未同步、序列缺口、过期、未来接收、数据源断开、无双边报价及质量状态非 VALID 的订单簿。
 
 当前实现不表示各交易所增量协议已经统一接入。交易所 Adapter 仍须按官方协议完成初始快照、

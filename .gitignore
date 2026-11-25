@@ -34,6 +34,7 @@ data/quality/*
 data/probes/*
 data/experiments/*
 data/reports/*
+data/verification/*
 logs/
 *.log
 
@@ -44,4 +45,5 @@ logs/
 !data/probes/.gitkeep
 !data/experiments/.gitkeep
 !data/reports/.gitkeep
+!data/verification/.gitkeep
 

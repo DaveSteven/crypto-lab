@@ -36,6 +36,14 @@ python scripts/probe_rest.py
 
 该命令会访问真实交易所公开接口，并将结果写入本地 `data/probes/`。它不会使用 API Key 或执行交易。
 
+验证 OKX `books` Canonical Adapter、序列连续性及公开交易规则：
+
+```bash
+python scripts/verify_okx_order_book.py --duration-seconds 15
+```
+
+该命令只访问公开行情接口，将容量受限的原始消息写入 `data/verification/`，并生成结构化 JSON 报告；不会创建或执行订单。
+
 运行公开 WebSocket smoke test：
 
 ```bash

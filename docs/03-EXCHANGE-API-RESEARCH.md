@@ -81,7 +81,7 @@ WebSocket 补充资料：
 
 - 30 分钟和 24 小时稳定性实验尚未执行。
 - 尚未验证高频运行下的数据成功率、429 行为或各平台长期网络稳定性。
-- 尚未把各平台响应转换为统一 Ticker、Candle 和 OrderBook Schema。
+- 尚未把各平台响应全部转换为统一 Ticker、Candle 和 OrderBook Schema；OKX `books` OrderBook Adapter 已完成并通过短时验证，其余交易所仍为 Pending。
 
 ## 7. WebSocket 首次验证
 
@@ -118,6 +118,25 @@ Partial 或 Unsynced 订单簿不得进入套利及模拟成交分析。
 Coinbase Exchange WebSocket 的 `level2` 订阅在本次实际请求中返回需要认证的错误。由于项目禁止使用账户 API Key，验证器改用无需认证的 Coinbase Advanced Trade 公共 WebSocket，并成功收到 Level 2 数据。
 
 OKX 已使用不带 `:8443` 的 443 端口地址。根据官方变更说明，公共网络的 8443 端口已于 2026-10-31 停止接受连接。
+
+### 7.3 OKX Canonical OrderBook Adapter 验证
+
+验证时间约为 2026-11-25 13:32 UTC（22:32 JST），使用 `scripts/verify_okx_order_book.py` 对 `BTC-USDT` 公开 `books` 频道执行 15 秒有界验证。
+
+| 指标 | 结果 |
+|---|---:|
+| 状态 | Verified |
+| 原始消息 | 144 |
+| Canonical 事件 | 143 |
+| 快照 | 1 |
+| 增量 | 142 |
+| 最终 `seqId` | 85023601943 |
+| 结束时订单簿年龄 | 354ms |
+| 原始数据大小 | 442196 bytes |
+
+验证同时从公开 instruments 接口取得：`tickSz=0.1`、`lotSz=0.00000001`、`minSz=0.00001`。该接口未提供统一 `min_notional` 字段，因此 Canonical 交易规则保留为 `null`，未伪造为零。
+
+OKX 官方已弃用 `books` 的 checksum 校验，字段固定为 0；当前 Adapter 明确忽略该值并使用 `prevSeqId/seqId` 验证连续性。原始数据和结构化报告保存在本地 `data/verification/`，不提交 Git。
 
 ## 8. Ticker 标准化验证
 

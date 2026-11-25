@@ -17,7 +17,7 @@ class MarketRules(FrozenModel):
     price_increment: Decimal = Field(gt=0)
     quantity_increment: Decimal = Field(gt=0)
     min_quantity: Decimal = Field(gt=0)
-    min_notional: Decimal = Field(gt=0)
+    min_notional: Decimal | None = Field(default=None, gt=0)
 
     def validate(self, plan: MatchPlan) -> None:
         if plan.requested_quantity < self.min_quantity:
@@ -34,10 +34,11 @@ class MarketRules(FrozenModel):
         reference_price = (
             plan.slippage.submission_reference_price or plan.slippage.execution_reference_price
         )
-        if reference_price is None:
-            raise MarketRuleViolation("minimum notional requires a reference price")
-        if reference_price * plan.requested_quantity < self.min_notional:
-            raise MarketRuleViolation("order notional is below the market minimum")
+        if self.min_notional is not None:
+            if reference_price is None:
+                raise MarketRuleViolation("minimum notional requires a reference price")
+            if reference_price * plan.requested_quantity < self.min_notional:
+                raise MarketRuleViolation("order notional is below the market minimum")
 
 
 def _require_increment(value: Decimal, increment: Decimal, name: str) -> None:

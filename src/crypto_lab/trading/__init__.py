@@ -20,6 +20,7 @@ from crypto_lab.trading.matching import (
     match_market_order,
 )
 from crypto_lab.trading.models import AssetBalance, LedgerEntry, LedgerReason, PaperAccount
+from crypto_lab.trading.okx_rules import normalize_okx_spot_rules
 from crypto_lab.trading.order_service import InvalidOrderTransitionError, OrderService
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
 from crypto_lab.trading.portfolio import (
@@ -61,4 +62,5 @@ __all__ = [
     "SimulatedLiquidityView",
     "create_paper_account",
     "match_market_order",
+    "normalize_okx_spot_rules",
 ]
