@@ -36,6 +36,14 @@ python scripts/probe_rest.py
 
 该命令会访问真实交易所公开接口，并将结果写入本地 `data/probes/`。它不会使用 API Key 或执行交易。
 
+运行公开 WebSocket smoke test：
+
+```bash
+python scripts/probe_websocket.py
+```
+
+默认并发观察六家交易所 12 秒，并分别记录 Ticker、订单簿快照、增量、序列状态、心跳和数据时效性。Partial 或 Unsynced 结果不得用于交易分析。
+
 ## 当前目录
 
 ```text

@@ -33,6 +33,15 @@
 
 接口文档会变化，接入代码不得假设以上行为永久不变。
 
+WebSocket 补充资料：
+
+- [Binance Spot WebSocket Streams](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams)
+- [OKX API V5 WebSocket](https://www.okx.com/docs-v5/en/)
+- [Bybit Public Orderbook](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook)
+- [Kraken WebSocket v2](https://docs.kraken.com/api/docs/category/websocket-v2/)
+- [Coinbase Advanced Trade WebSocket Channels](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/websocket/websocket-channels)
+- [bitbank Public Streams](https://github.com/bitbankinc/bitbank-api-docs/blob/master/public-stream.md)
+
 ## 3. 首次真实验证结果
 
 验证时间约为 2026-11-25 07:47 UTC（16:47 JST）。每个平台执行 8 个请求，即两个交易对分别验证 4 类数据。
@@ -70,8 +79,43 @@
 
 ## 6. 尚未完成
 
-- WebSocket 连接、心跳、重连及订单簿同步验证属于 Task 0.3。
 - 30 分钟和 24 小时稳定性实验尚未执行。
 - 尚未验证高频运行下的数据成功率、429 行为或各平台长期网络稳定性。
 - 尚未把各平台响应转换为统一 Ticker、Candle 和 OrderBook Schema。
+
+## 7. WebSocket 首次验证
+
+验证时间约为 2026-11-25 07:55 UTC（16:55 JST），每个平台并发观察约 12 秒。
+
+| 交易所 | 消息数 | Ticker | 快照 | 增量 | 心跳 | 同步状态 |
+|---|---:|---|---|---|---|---|
+| Binance | 3,895 | Yes | Yes | Yes | Pass | Partial |
+| OKX | 197 | Yes | Yes | Yes | Pass | Verified |
+| Bybit | 547 | Yes | Yes | Yes | Pass | Verified |
+| Kraken | 1,093 | Yes | Yes | Yes | Pass | Partial |
+| Coinbase | 210 | Yes | Yes | Yes | Pass | Verified |
+| bitbank | 49 | Yes | Yes | Yes | Pass | Verified |
+
+本轮 6/6 个 WebSocket smoke probe 成功。证据文件为：
+
+`data/probes/2026-11-25/websocket-075700.jsonl`
+
+成功条件包括订阅确认、协议 ping/pong、实时 Ticker、订单簿快照、行情未过期和未发现序列倒退。探测器实现最多两次连接尝试，但本轮所有平台均在第一次连接成功，因此断线后的实际重连恢复仍为 Pending。
+
+### 7.1 同步结论
+
+- OKX：`books` 初始快照后收到增量，并验证 `prevSeqId` 与上一条 `seqId` 连续。
+- Bybit：收到 snapshot/delta，并检查更新 ID 未倒退。
+- Coinbase：使用无需认证的 Advanced Trade WebSocket，验证连接级 `sequence_num` 连续，并收到 `l2_data` snapshot/update。
+- bitbank：同时订阅 `depth_whole` 与 `depth_diff`，验证共享序列单调递增。
+- Binance：同时收到 partial depth 快照和 diff depth 更新，但尚未按照官方流程用 REST `lastUpdateId` 桥接缓存增量，因此状态只能是 Partial。
+- Kraken：收到 book snapshot/update，但本轮未实现官方 checksum 计算，因此状态只能是 Partial。
+
+Partial 或 Unsynced 订单簿不得进入套利及模拟成交分析。
+
+### 7.2 实际发现
+
+Coinbase Exchange WebSocket 的 `level2` 订阅在本次实际请求中返回需要认证的错误。由于项目禁止使用账户 API Key，验证器改用无需认证的 Coinbase Advanced Trade 公共 WebSocket，并成功收到 Level 2 数据。
+
+OKX 已使用不带 `:8443` 的 443 端口地址。根据官方变更说明，公共网络的 8443 端口已于 2026-10-31 停止接受连接。
 
