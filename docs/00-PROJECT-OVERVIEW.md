@@ -488,6 +488,21 @@ Phase 0-A 的短时验证不得被描述为长期稳定性结论。Phase 0-B 通
 - 持仓与盈亏。
 - 交易记录。
 
+Web 应用按以下独立验收任务推进：
+
+1. 后端服务层设计（Python）。
+2. REST API（FastAPI）。
+3. 数据持久化（PostgreSQL）。
+4. 实时行情推送（WebSocket）。
+5. 前端初始化（React + TypeScript + Vite）。
+6. Market 行情页面（Lightweight Charts）。
+7. 模拟交易页面。
+8. 账户及持仓页面。
+9. 订单及成交记录。
+10. 前后端联调及 E2E 验收。
+
+以上任务按边界分别实现和验收，不将整个 Web 应用作为单次开发任务处理。
+
 ### Phase 2 — 跨交易所套利
 
 目标：
