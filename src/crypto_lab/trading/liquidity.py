@@ -83,6 +83,22 @@ class SimulatedLiquidityView:
         )
 
     def consume(self, plan: MatchPlan, *, consumption_id: str) -> None:
+        candidate = self._validated_candidate(plan, consumption_id=consumption_id)
+        if plan.side is OrderSide.BUY:
+            self._residual_asks = candidate
+        else:
+            self._residual_bids = candidate
+        self._consumption_ids.add(consumption_id)
+
+    def validate_consumption(self, plan: MatchPlan, *, consumption_id: str) -> None:
+        self._validated_candidate(plan, consumption_id=consumption_id)
+
+    def _validated_candidate(
+        self,
+        plan: MatchPlan,
+        *,
+        consumption_id: str,
+    ) -> dict[Decimal, Decimal]:
         if not consumption_id:
             raise ValueError("consumption ID is required")
         if consumption_id in self._consumption_ids:
@@ -103,12 +119,7 @@ class SimulatedLiquidityView:
                 candidate.pop(fill.price, None)
             else:
                 candidate[fill.price] = remaining
-
-        if plan.side is OrderSide.BUY:
-            self._residual_asks = candidate
-        else:
-            self._residual_bids = candidate
-        self._consumption_ids.add(consumption_id)
+        return candidate
 
 
 def _quantities(levels: tuple[PriceLevel, ...]) -> dict[Decimal, Decimal]:

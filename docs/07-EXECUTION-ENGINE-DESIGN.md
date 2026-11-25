@@ -139,7 +139,7 @@ slippage_rate = total_slippage_amount / reference_notional
 1. **1.5-A Canonical Market State（部分完成）**：已实现订单簿/Trade Canonical Model、绝对数量增量 Market State、序列和时效门禁；各交易所 Adapter 留待接入真实数据源时按官方协议实现。
 2. **1.5-B Pure Matcher（已完成）**：已实现无副作用的逐档撮合、VWAP 和滑点计算；滑点金额按成交档位精确求和，避免循环小数 VWAP 反乘产生 Decimal context 尾差。
 3. **1.5-C Liquidity View（已完成）**：已实现按模拟环境隔离的共享剩余流动性、连续绝对数量更新、原子消费及重复消费保护；同步世代变化必须显式重置，不会自动恢复已消耗流动性。
-4. **1.5-D Settlement Adapter**：将 `MatchPlan` 转换为已有结算输入；一次计划内的多档 Fill、流水、订单和流动性共同提交或失败。
+4. **1.5-D Settlement Adapter（已完成）**：已将 `MatchPlan` 转换为多档成交记录及单次结算批次；计划会先验证资金、订单及流动性条件，失败时不消费流动性，深度不足的市价单结算实际成交后取消剩余并释放冻结资金。
 5. **1.5-E Regression & Acceptance**：运行 EX-001～EX-008 及 Task 1.1～1.4 回归测试。
 
 最小变更方向：保留现有 `ExecutionRecord` 及结算公式；增加 `FillLeg/MatchPlan` 和批量执行入口。现有调用方传价的 `execute` 仅保留为内部兼容或测试辅助入口，不对前端开放。
