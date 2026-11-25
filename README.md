@@ -52,6 +52,14 @@ python scripts/normalize_tickers.py
 
 标准化结果写入本地 `data/normalized/`，Decimal 在 JSON 中保存为字符串，缺失字段保存为 `null`。
 
+记录所有方向的跨交易所毛价差：
+
+```bash
+python scripts/analyze_spreads.py
+```
+
+默认不假设未知手续费或再平衡成本，因此净收益为 `null`。只有显式提供完整成本参数时，工具才会生成标记为假设的净收益估算。
+
 ## 当前目录
 
 ```text

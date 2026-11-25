@@ -4,82 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
-import time
 import urllib.error
-import urllib.request
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from pathlib import Path
-from typing import Final
 
 from crypto_lab.market_data import normalize_ticker
-from crypto_lab.models import ExchangeId
-
-
-@dataclass(frozen=True)
-class TickerEndpoint:
-    exchange_id: ExchangeId
-    base_asset: str
-    quote_asset: str
-    url: str
-
-
-ENDPOINTS: Final = (
-    TickerEndpoint(
-        ExchangeId.BINANCE,
-        "BTC",
-        "USDT",
-        "https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT",
-    ),
-    TickerEndpoint(
-        ExchangeId.OKX,
-        "BTC",
-        "USDT",
-        "https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT",
-    ),
-    TickerEndpoint(
-        ExchangeId.BYBIT,
-        "BTC",
-        "USDT",
-        "https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT",
-    ),
-    TickerEndpoint(
-        ExchangeId.KRAKEN,
-        "BTC",
-        "USDT",
-        "https://api.kraken.com/0/public/Ticker?pair=XBTUSDT",
-    ),
-    TickerEndpoint(
-        ExchangeId.COINBASE,
-        "BTC",
-        "USDT",
-        "https://api.exchange.coinbase.com/products/BTC-USDT/ticker",
-    ),
-    TickerEndpoint(
-        ExchangeId.BITBANK,
-        "BTC",
-        "JPY",
-        "https://public.bitbank.cc/btc_jpy/ticker",
-    ),
-)
-
-
-def fetch_json(endpoint: TickerEndpoint, timeout_seconds: float) -> tuple[dict, int]:
-    request = urllib.request.Request(
-        endpoint.url,
-        headers={"User-Agent": "crypto-lab-phase0/0.1 (+ticker-normalization)"},
-    )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        body = response.read(2_000_001)
-        if len(body) > 2_000_000:
-            raise ValueError("response exceeded 2000000 bytes")
-        received_ts_ms = time.time_ns() // 1_000_000
-        payload = json.loads(body, parse_float=Decimal)
-        if not isinstance(payload, dict):
-            raise ValueError("ticker response must be a JSON object")
-        return payload, received_ts_ms
+from crypto_lab.market_data.live import TICKER_ENDPOINTS, fetch_json
 
 
 def default_output_path() -> Path:
@@ -103,7 +33,7 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     records = []
     failures = 0
-    for endpoint in ENDPOINTS:
+    for endpoint in TICKER_ENDPOINTS:
         try:
             raw, received_ts_ms = fetch_json(endpoint, args.timeout)
             record = normalize_ticker(
@@ -126,7 +56,7 @@ def main() -> int:
     with output_path.open("w", encoding="utf-8") as output:
         for record in records:
             output.write(record.model_dump_json() + "\n")
-    print(f"\n{len(records)}/{len(ENDPOINTS)} normalized; evidence: {output_path}")
+    print(f"\n{len(records)}/{len(TICKER_ENDPOINTS)} normalized; evidence: {output_path}")
     return 1 if failures else 0
 
 

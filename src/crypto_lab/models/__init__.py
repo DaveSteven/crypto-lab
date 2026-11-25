@@ -10,6 +10,7 @@ from crypto_lab.models.enums import (
     TransportType,
 )
 from crypto_lab.models.probe import APIProbeResult
+from crypto_lab.models.spread import SpreadObservation
 from crypto_lab.models.ticker import Ticker
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "ExchangeId",
     "MarketEventEnvelope",
     "MarketType",
+    "SpreadObservation",
     "Ticker",
     "TransportType",
 ]
