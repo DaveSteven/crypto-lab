@@ -9,6 +9,12 @@ from crypto_lab.trading.ledger import (
 from crypto_lab.trading.models import AssetBalance, LedgerEntry, LedgerReason, PaperAccount
 from crypto_lab.trading.order_service import InvalidOrderTransitionError, OrderService
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
+from crypto_lab.trading.portfolio import (
+    InsufficientPositionError,
+    PortfolioEngine,
+    Position,
+    PositionValuation,
+)
 
 __all__ = [
     "AccountLedger",
@@ -17,6 +23,7 @@ __all__ = [
     "ExecutionRecord",
     "ExecutionSimulator",
     "InsufficientBalanceError",
+    "InsufficientPositionError",
     "InvalidOrderTransitionError",
     "LedgerEntry",
     "LedgerReason",
@@ -26,5 +33,8 @@ __all__ = [
     "OrderType",
     "PaperAccount",
     "PaperOrder",
+    "PortfolioEngine",
+    "Position",
+    "PositionValuation",
     "create_paper_account",
 ]
