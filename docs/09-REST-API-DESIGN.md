@@ -4,9 +4,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 对应任务 | Phase 1 Task 1.10 |
-| 状态 | Accepted / Implementation Active |
+| 状态 | Implemented / Accepted |
 | 框架 | FastAPI |
 
 ## 1. 目标与边界
@@ -167,7 +167,7 @@ Execution 只读，不提供创建、修改或删除接口。
 - OpenAPI JSON 保存测试快照或验证关键 path/schema，不手工维护第二份 Contract。
 - 测试不得访问外部交易所网络。
 
-## 9. 待确认事项
+## 9. 已确认并实现的事项
 
 1. 使用 FastAPI + Pydantic，保持同步 Route / 同步 SQLAlchemy Session。
 2. Base Path 使用 `/api/v1`。
@@ -177,4 +177,18 @@ Execution 只读，不提供创建、修改或删除接口。
 6. 使用 `POST .../cancel`，不使用 DELETE 删除订单。
 7. Phase 1 不实现认证，服务默认只允许本机绑定且 CORS 关闭。
 8. Task 1.10 只提供 REST；行情和订单实时推送留待 Task 1.11。
+
+## 10. 实施与验收记录
+
+- FastAPI Route 保持同步，Route 仅调用 Application Service。
+- PostgreSQL 根环境行锁保护写事务；业务状态与 `api_idempotency_keys` 同事务提交。
+- 创建环境、账户、订单及取消均强制 `Idempotency-Key`；同键异载荷返回 409。
+- 订单提交复用领域层冻结和 `ExecutionScheduler`，成功后持久化为 `PENDING_EXECUTION`。
+- 多账户恢复只装载所属订单及调度项，订单序列仍在环境范围内保持唯一。
+- `/health/ready` 同时验证数据库连接及 Alembic Head `0002_api_idempotency`。
+- TestClient 验证 OpenAPI、严格 Schema、Decimal 字符串、错误信封和请求 ID。
+- 临时 PostgreSQL 16 验证幂等、资源归属、冻结/释放及多账户调度隔离。
+- 完整回归结果：230 passed；无外部交易所网络调用。
+
+当前限制：Phase 1 仍无认证，必须只绑定本机；默认手续费配置为明确版本化的模拟配置，并非交易所实时费率；订单到期执行和实时推送分别由串行事件入口及 Task 1.11 承担；列表已限制最大 200 项，游标分页留待数据规模验收后补充。
 

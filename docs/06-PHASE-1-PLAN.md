@@ -4,7 +4,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.6 |
+| 文档版本 | V0.7 |
 | 当前阶段 | Phase 1 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
@@ -31,7 +31,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.7 | 模拟执行延迟 | Completed |
 | 1.8 | 交易引擎集成与一致性验证 | Completed |
 | 1.9 | 数据持久化 | Completed |
-| 1.10 | 后端服务与 REST API | Pending |
+| 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Pending |
 | 1.12 | React 前端应用 | Pending |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
@@ -133,10 +133,11 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ### Task 1.10 — 后端服务与 REST API
 
-- [ ] 定义应用服务、错误及事务边界。
-- [ ] 初始化 FastAPI 并定义请求、响应和错误 Schema。
-- [ ] 提供账户、订单、成交、余额及持仓端点。
-- [ ] 生成并验证 OpenAPI 文档。
+- [x] 定义同步 Application Service、环境事务锁、幂等及错误边界。
+- [x] 初始化 FastAPI 并定义严格的请求、响应和错误 Schema。
+- [x] 提供环境、账户、订单、成交、余额及持仓 REST 端点。
+- [x] 生成并验证 OpenAPI，强制 Decimal 字符串、写请求幂等键及请求 ID。
+- [x] 使用真实 PostgreSQL 验证迁移、环境隔离、冻结、调度、取消和恢复。
 
 ### Task 1.11 — 实时行情服务
 

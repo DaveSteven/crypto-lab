@@ -20,6 +20,17 @@ export CRYPTO_LAB_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:543
 
 PostgreSQL 集成测试仅在提供 `CRYPTO_LAB_TEST_DATABASE_URL` 时运行；未配置时自动跳过，不使用 SQLite 替代 PostgreSQL 验收。
 
+## 启动本地模拟交易 API
+
+完成数据库迁移后启动服务：
+
+```bash
+export CRYPTO_LAB_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:5432/crypto_lab'
+python -m crypto_lab.api
+```
+
+服务固定绑定 `127.0.0.1:8000`，OpenAPI 位于 `http://127.0.0.1:8000/docs`。Phase 1 尚无身份认证，不得将服务监听到公网。写接口必须提供 `Idempotency-Key`，所有余额和订单均为模拟数据。Task 1.10 只提供 REST，不包含 WebSocket 实时推送。
+
 ## 本地初始化
 
 ```bash
@@ -100,6 +111,8 @@ data/             本地实验数据（运行数据不提交 Git）
 - [Phase 0 开发计划](docs/01-PHASE-0-PLAN.md)
 - [行情数据规范](docs/02-MARKET-DATA-SCHEMA.md)
 - [开发规范](docs/AGENT.md)
+- [Phase 1 开发计划](docs/06-PHASE-1-PLAN.md)
+- [REST API 设计](docs/09-REST-API-DESIGN.md)
 
 候选交易所、依赖和接口行为尚待真实验证。未经验证的内容不得标记为已验证结果。
 
