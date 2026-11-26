@@ -6,7 +6,10 @@ import { OrderEntryPanel } from '@/features/trading/OrderEntryPanel'
 import { OrdersTable } from '@/features/trading/OrdersTable'
 import { ExecutionsTable } from '@/features/trading/ExecutionsTable'
 import { AccountPanel } from '@/features/account/AccountPanel'
-import { Tabs } from '@/shared/ui'
+import { ExecutionDetailDrawer } from '@/features/trading/ExecutionDetailDrawer'
+import { SYNC_LABEL, accountSyncState } from '@/features/trading/orderStatus'
+import { connectionDisplay, useConnectionStore } from '@/app/connectionStore'
+import { Badge, Tabs } from '@/shared/ui'
 
 /**
  * Trading workspace (docs/12 §7): three-column resizable area over a
@@ -28,10 +31,13 @@ const ACTIVITY_TABS = [
 ] as const
 
 export function TradingWorkspace() {
+  const connectionStatus = useConnectionStore((state) => state.status)
+  const sync = accountSyncState(connectionDisplay(connectionStatus))
   const [activityTab, setActivityTab] = useState<ActivityTab>('open')
 
   return (
     <div className="h-full min-h-0 p-1">
+      <ExecutionDetailDrawer />
       <PanelGroup direction="vertical" autoSaveId="trading-workspace.v1" className="h-full">
         {/* Main three-column area — chart 54% / book-trades 21% / entry 25% (§7.2). */}
         <Panel defaultSize={72} minSize={40}>
@@ -64,6 +70,9 @@ export function TradingWorkspace() {
           >
             <header className="flex h-9 shrink-0 items-center border-b border-line px-2">
               <Tabs items={[...ACTIVITY_TABS]} value={activityTab} onChange={setActivityTab} />
+              <Badge tone={sync === 'synced' ? 'positive' : 'warning'} className="ml-auto" data-testid="account-sync">
+                {SYNC_LABEL[sync]}
+              </Badge>
             </header>
             <div className="min-h-0 flex-1 overflow-auto">
               {activityTab === 'open' && <OrdersTable filter="open" emptyMessage="暂无当前委托。" />}

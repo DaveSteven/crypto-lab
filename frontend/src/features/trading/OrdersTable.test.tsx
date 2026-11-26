@@ -62,7 +62,7 @@ describe('OrdersTable', () => {
     expect(screen.getByText('500 ms')).toBeVisible()
     expect(screen.getByText('600 ms')).toBeVisible()
     expect(screen.getByText('100 ms')).toBeVisible()
-    expect(screen.getByText('OPEN')).toBeVisible()
+    expect(screen.getByText('挂单中')).toBeVisible()
     expect(screen.getByRole('button', { name: '取消' })).toBeEnabled()
   })
 

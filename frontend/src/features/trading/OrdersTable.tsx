@@ -5,9 +5,10 @@ import { formatDecimal, formatTime } from '@/shared/lib/format'
 import { gateway } from '@/app/gateway'
 import { useSessionStore } from '@/app/sessionStore'
 import { useTradingStore } from './tradingStore'
+import { useDetailStore } from './detailStore'
+import { OPEN_STATUSES, fillSummary, remainingQuantity, statusLabel } from './orderStatus'
 import { Button, EmptyState } from '@/shared/ui'
 
-const OPEN_STATUSES = new Set(['PENDING_EXECUTION', 'OPEN', 'PARTIALLY_FILLED'])
 
 /** Orders table used inside the Account Activity Panel (docs/12 §12.1/§12.2). */
 export function OrdersTable({
@@ -22,6 +23,7 @@ export function OrdersTable({
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [cancelingId, setCancelingId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const openDetail = useDetailStore((state) => state.open)
 
   const sorted = [...orders].sort((a, b) => b.order_sequence - a.order_sequence)
   const visible =
@@ -82,6 +84,7 @@ export function OrdersTable({
             <th className="py-1.5 pr-2 text-right">限价</th>
             <th className="py-1.5 pr-2">状态</th>
             <th className="py-1.5 pr-2 text-right">数量/已成交</th>
+            <th className="py-1.5 pr-2 text-right">剩余</th>
             <th className="py-1.5 pr-2 text-right">均价</th>
             <th className="py-1.5 pr-2 text-right">手续费</th>
             <th className="py-1.5 pr-2 text-right">配置延迟</th>
@@ -101,10 +104,16 @@ export function OrdersTable({
               </td>
               <td className="py-1.5 pr-2 text-left">{order.order_type === 'MARKET' ? '市价' : '限价'}</td>
               <td className="py-1.5 pr-2">{formatDecimal(order.limit_price)}</td>
-              <td className="py-1.5 pr-2 text-left">{order.status}</td>
+              <td className="py-1.5 pr-2 text-left">
+                <div>{statusLabel(order.status)}</div>
+                {fillSummary(order) !== null && (
+                  <div className="text-[10px] text-ink-muted">{fillSummary(order)}</div>
+                )}
+              </td>
               <td className="py-1.5 pr-2">
                 {formatDecimal(order.quantity)} / {formatDecimal(order.filled_quantity)}
               </td>
+              <td className="py-1.5 pr-2">{remainingQuantity(order)}</td>
               <td className="py-1.5 pr-2">{formatDecimal(order.average_fill_price)}</td>
               <td className="py-1.5 pr-2">{formatDecimal(order.cumulative_fee)}</td>
               <td className="py-1.5 pr-2">{order.configured_latency_ms ?? '—'} ms</td>
@@ -114,7 +123,10 @@ export function OrdersTable({
               <td className="py-1.5 pr-2" title="实际执行 − 计划执行（模拟调度粒度）">
                 {order.scheduler_lag_ms ?? '—'} ms
               </td>
-              <td className="py-1.5 pr-2 text-left">
+              <td className="flex gap-1 py-1.5 pr-2 text-left">
+                <Button variant="ghost" size="compact" onClick={() => openDetail(order.order_id)}>
+                  详情
+                </Button>
                 {OPEN_STATUSES.has(order.status) ? (
                   <Button
                     variant="outline"

@@ -1,10 +1,12 @@
 import { formatDecimal, formatTime } from '@/shared/lib/format'
 import { useTradingStore } from './tradingStore'
-import { EmptyState } from '@/shared/ui'
+import { useDetailStore } from './detailStore'
+import { Button, EmptyState } from '@/shared/ui'
 
 /** Fill History view (docs/12 §12.3): read-only, server-projected. */
 export function ExecutionsTable({ compact = false }: { compact?: boolean }) {
   const executions = useTradingStore((state) => state.executions)
+  const openDetail = useDetailStore((state) => state.open)
   const sorted = [...executions].sort((a, b) => b.executed_ts_ms - a.executed_ts_ms)
 
   if (sorted.length === 0) return <EmptyState message="暂无成交。" />
@@ -21,6 +23,8 @@ export function ExecutionsTable({ compact = false }: { compact?: boolean }) {
           <th className="py-1.5 pr-2 text-right">数量</th>
           <th className="py-1.5 pr-2 text-right">成交额</th>
           <th className="py-1.5 pr-2 text-right">手续费</th>
+          <th className="py-1.5 pr-2">订单 / 成交 ID</th>
+          <th className="py-1.5 pr-2">操作</th>
         </tr>
       </thead>
       <tbody className="numeric">
@@ -38,6 +42,14 @@ export function ExecutionsTable({ compact = false }: { compact?: boolean }) {
             <td className="py-1.5 pr-2">{formatDecimal(execution.quote_amount)}</td>
             <td className="py-1.5 pr-2">
               {formatDecimal(execution.fee_amount)} {execution.fee_asset}
+            </td>
+            <td className="py-1.5 pr-2 text-left text-ink-muted" title={`订单 ${execution.order_id}\n成交 ${execution.execution_id}`}>
+              {execution.order_id.slice(0, 8)}… / {execution.execution_id.slice(0, 8)}…
+            </td>
+            <td className="py-1.5 pr-2 text-left">
+              <Button variant="ghost" size="compact" onClick={() => openDetail(execution.order_id, execution.execution_id)}>
+                详情
+              </Button>
             </td>
           </tr>
         ))}
