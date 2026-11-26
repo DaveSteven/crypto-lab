@@ -3,8 +3,13 @@
 The feed owns the exchange connection lifecycle (subscribe, application-level
 keepalive, resubscribe after order-book desynchronization, bounded reconnect
 backoff) and hands every validated Canonical event to the MarketRealtimeBridge.
-It never fabricates market data: messages that fail validation are counted and
-surfaced as quality events, never replaced by synthetic values.
+
+OKX serves candle channels on its Business WebSocket endpoint while tickers,
+trades and books remain on the public endpoint, so the feed maintains one
+connection per required endpoint and treats the whole set as one logical
+upstream session. It never fabricates market data: messages that fail
+validation are counted and surfaced as quality events, never replaced by
+synthetic values.
 """
 
 from __future__ import annotations
@@ -28,7 +33,8 @@ from crypto_lab.market_data import (
 from crypto_lab.models import DataQualityStatus, ExchangeId
 from crypto_lab.realtime.market import MarketRealtimeBridge
 
-OKX_PUBLIC_WS_URL = "wss://ws.okx.com:8443/ws/v5/public"
+OKX_PUBLIC_WS_URL = "wss://ws.okx.com:443/ws/v5/public"
+OKX_BUSINESS_WS_URL = "wss://ws.okx.com:443/ws/v5/business"
 
 CHANNEL_REQUEST_NAME = {
     "ticker": "tickers",
@@ -59,6 +65,9 @@ async def _default_connection(url: str) -> Connection:
         close_timeout=2,
         # OKX keepalive uses application-level "ping"/"pong" text frames.
         ping_interval=None,
+        # Local system proxies have shown broken WSS CONNECT handling; the
+        # feed connects directly to the exchange public endpoints.
+        proxy=None,
     )
 
 
@@ -67,7 +76,7 @@ OrderBookConsumer = Callable[[Any], Awaitable[None]]
 
 
 class OkxMarketFeed:
-    """Drive one OKX public WebSocket connection into one environment hub."""
+    """Drive OKX public/business WebSocket connections into the realtime hub."""
 
     def __init__(
         self,
@@ -78,6 +87,7 @@ class OkxMarketFeed:
         channels: Iterable[str] = ("ticker", "trade", "order_book"),
         candle_interval: str = "1m",
         url: str = OKX_PUBLIC_WS_URL,
+        business_url: str = OKX_BUSINESS_WS_URL,
         connection_factory: ConnectionFactory = _default_connection,
         now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
         ping_interval_seconds: float = 20.0,
@@ -93,6 +103,7 @@ class OkxMarketFeed:
         self.channels = tuple(channels)
         self.candle_interval = candle_interval
         self.url = url
+        self.business_url = business_url
         self.connection_factory = connection_factory
         self.now_ms = now_ms
         self.ping_interval_seconds = ping_interval_seconds
@@ -117,20 +128,34 @@ class OkxMarketFeed:
             "stale_transitions": 0,
         }
         self._stopping = False
-        self._connection: Connection | None = None
+        self._connections: dict[str, Connection] = {}
         self._supervision: asyncio.Task[None] | None = None
         self._backoff_index = 0
         self._last_message_ms: int | None = None
         self._last_data_ms: dict[str, int] = {}
         self._last_quality: dict[str, str] = {}
         self._book_health: dict[str, str] = {}
-        self._awaiting_pong = False
+        self._awaiting_pong: dict[str, bool] = {}
         self._acknowledged: set[tuple[Any, Any]] = set()
+
+    def _endpoint_plan(self) -> dict[str, tuple[str, ...]]:
+        """Map each OKX WebSocket endpoint to the channel kinds it serves."""
+        plan: dict[str, tuple[str, ...]] = {self.url: ()}
+        candle_channels = tuple(
+            channel for channel in self.channels if channel != CANDLE_KIND
+        )
+        plan[self.url] = candle_channels
+        if CANDLE_KIND in self.channels:
+            plan[self.business_url] = (CANDLE_KIND,)
+        return plan
 
     async def run(self) -> None:
         while not self._stopping:
+            plan = self._endpoint_plan()
+            connections: dict[str, Connection] = {}
             try:
-                connection = await self.connection_factory(self.url)
+                for endpoint_url in plan:
+                    connections[endpoint_url] = await self.connection_factory(endpoint_url)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -140,18 +165,31 @@ class OkxMarketFeed:
                 await self._sleep(self._next_backoff())
                 continue
             self._backoff_index = 0
-            self._awaiting_pong = False
-            self._connection = connection
-            self._supervision = asyncio.create_task(self._supervise(connection))
+            self._awaiting_pong = {endpoint_url: False for endpoint_url in connections}
+            self._connections = connections
+            supervision = asyncio.create_task(self._supervise(connections))
             try:
-                await self._subscribe(connection)
-                await self._receive_loop(connection)
+                for endpoint_url, connection in connections.items():
+                    await self._subscribe(connection, plan[endpoint_url])
+                receive_tasks = [
+                    asyncio.create_task(self._receive_loop(connection, endpoint_url))
+                    for endpoint_url, connection in connections.items()
+                ]
+                await asyncio.gather(*receive_tasks, return_exceptions=True)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 pass
             finally:
-                await self._shutdown_connection(connection)
+                if supervision is not None:
+                    supervision.cancel()
+                    with contextlib.suppress(Exception):
+                        await supervision
+                self._connections = {}
+                for connection in connections.values():
+                    with contextlib.suppress(Exception):
+                        await connection.close()
+                await self._mark_disconnected()
             if self._stopping:
                 break
             if not self.reconnect_delays_seconds:
@@ -161,8 +199,7 @@ class OkxMarketFeed:
 
     async def stop(self) -> None:
         self._stopping = True
-        connection = self._connection
-        if connection is not None:
+        for connection in tuple(self._connections.values()):
             with contextlib.suppress(Exception):
                 await connection.close()
 
@@ -179,15 +216,6 @@ class OkxMarketFeed:
         self._backoff_index += 1
         return self.reconnect_delays_seconds[index]
 
-    async def _shutdown_connection(self, connection: Connection) -> None:
-        if self._supervision is not None:
-            self._supervision.cancel()
-            self._supervision = None
-        self._connection = None
-        with contextlib.suppress(Exception):
-            await connection.close()
-        await self._mark_disconnected()
-
     async def _mark_disconnected(self) -> None:
         now_ms = self.now_ms()
         for instrument_id in self.instruments:
@@ -199,17 +227,17 @@ class OkxMarketFeed:
                 now_ms,
             )
 
-    async def _subscribe(self, connection: Connection) -> None:
-        arguments = self._subscription_arguments()
+    async def _subscribe(self, connection: Connection, channels: Iterable[str]) -> None:
+        arguments = self._subscription_arguments(channels)
         if not arguments:
             raise ValueError("feed produced no subscription arguments")
         await connection.send(json.dumps({"op": "subscribe", "args": arguments}))
 
-    def _subscription_arguments(self) -> list[dict[str, str]]:
+    def _subscription_arguments(self, channels: Iterable[str]) -> list[dict[str, str]]:
         arguments: list[dict[str, str]] = []
         for instrument_id in self.instruments:
             instrument = _okx_instrument(instrument_id)
-            for channel in self.channels:
+            for channel in channels:
                 if channel == CANDLE_KIND:
                     arguments.append(
                         {
@@ -223,20 +251,21 @@ class OkxMarketFeed:
                     )
         return arguments
 
-    async def _resubscribe_order_book(self, connection: Connection, instrument: str) -> None:
+    async def _resubscribe_order_book(self, instrument: str) -> None:
+        connection = self._connections.get(self.url)
+        if connection is None:
+            return
         argument = {"channel": "books", "instId": _okx_instrument(instrument)}
-        await connection.send(
-            json.dumps({"op": "unsubscribe", "args": [argument]}),
-        )
+        await connection.send(json.dumps({"op": "unsubscribe", "args": [argument]}))
         await connection.send(json.dumps({"op": "subscribe", "args": [argument]}))
         self.stats["resynchronizations"] += 1
 
-    async def _receive_loop(self, connection: Connection) -> None:
+    async def _receive_loop(self, connection: Connection, endpoint_url: str) -> None:
         while True:
             message = await connection.recv()
             now_ms = self.now_ms()
             self._last_message_ms = now_ms
-            self._awaiting_pong = False
+            self._awaiting_pong[endpoint_url] = False
             if message == "pong":
                 continue
             self.stats["messages_received"] += 1
@@ -320,9 +349,7 @@ class OkxMarketFeed:
                     quality_status=DataQualityStatus.UNSYNCED,
                     reason="order-book sequence gap detected",
                 )
-                connection = self._connection
-                if connection is not None:
-                    await self._resubscribe_order_book(connection, event.instrument_id)
+                await self._resubscribe_order_book(event.instrument_id)
             return
         healthy = view.quality_status is DataQualityStatus.VALID and view.synchronized
         health = "healthy" if healthy else "invalid"
@@ -380,22 +407,24 @@ class OkxMarketFeed:
             reason=reason,
         )
 
-    async def _supervise(self, connection: Connection) -> None:
+    async def _supervise(self, connections: Mapping[str, Connection]) -> None:
         try:
             while True:
                 await asyncio.sleep(self.ping_interval_seconds)
                 now_ms = self.now_ms()
-                if self._awaiting_pong:
+                if any(self._awaiting_pong.values()):
                     raise ConnectionError("OKX keepalive pong was not received")
-                self._awaiting_pong = True
-                await connection.send("ping")
+                for endpoint_url, connection in connections.items():
+                    self._awaiting_pong[endpoint_url] = True
+                    await connection.send("ping")
                 await self._check_staleness(now_ms)
         except asyncio.CancelledError:
             return
         except Exception:
-            # Force a reconnect by closing the receive loop's connection.
-            with contextlib.suppress(Exception):
-                await connection.close()
+            # Force a reconnect by closing every endpoint connection.
+            for connection in tuple(connections.values()):
+                with contextlib.suppress(Exception):
+                    await connection.close()
 
     async def _check_staleness(self, now_ms: int) -> None:
         for instrument_id in self.instruments:

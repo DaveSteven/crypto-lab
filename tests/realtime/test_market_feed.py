@@ -139,7 +139,7 @@ class ConnectionScript:
         return self.connections.pop(0)
 
 
-def make_feed(registry, clock, script, *, channels=("ticker", "trade", "candle", "order_book")):
+def make_feed(registry, clock, script, *, channels=("ticker", "trade", "order_book")):
     bridge = MarketRealtimeBridge(registry)
     return OkxMarketFeed(
         bridge,
@@ -176,9 +176,12 @@ def test_feed_subscribes_all_configured_channels_and_pumps_events() -> None:
         hub = registry.hub("env-1")
         client = subscribe_all(hub)
         clock = ManualClock()
-        connection = FakeConnection("pong", TICKER_MESSAGE, TRADE_MESSAGE, CANDLE_MESSAGE)
-        script = ConnectionScript(connection)
-        feed = make_feed(registry, clock, script)
+        public = FakeConnection("pong", TICKER_MESSAGE, TRADE_MESSAGE)
+        business = FakeConnection(CANDLE_MESSAGE)
+        script = ConnectionScript(public, business)
+        feed = make_feed(
+            registry, clock, script, channels=("ticker", "trade", "candle", "order_book")
+        )
         run_task = asyncio.create_task(feed.run())
         while len(client.buffer.snapshot()) < 3:
             await asyncio.sleep(0)
@@ -186,12 +189,18 @@ def test_feed_subscribes_all_configured_channels_and_pumps_events() -> None:
                 break
         await feed.stop()
         await asyncio.wait_for(run_task, timeout=1)
-        subscribe_request = json.loads(connection.sent[0])
-        assert subscribe_request["op"] == "subscribe"
-        channels = {argument["channel"] for argument in subscribe_request["args"]}
-        assert channels == {"tickers", "trades", "candle1m", "books"}
+        # Candles ride the OKX business endpoint; the rest use the public one.
+        public_request = json.loads(public.sent[0])
+        assert public_request["op"] == "subscribe"
+        assert {
+            argument["channel"] for argument in public_request["args"]
+        } == {"tickers", "trades", "books"}
+        business_request = json.loads(business.sent[0])
+        assert {
+            argument["channel"] for argument in business_request["args"]
+        } == {"candle1m"}
         topics = [event.type for event in client.buffer.snapshot()]
-        # A quality event may follow once the scripted connection runs dry;
+        # A quality event may follow once the scripted connections run dry;
         # the first three deliveries must be the canonical market events.
         assert topics[:3] == ["market.ticker", "market.trade", "market.candle"]
         assert "market.order_book" not in topics[:3]
@@ -316,7 +325,7 @@ def test_connection_loss_marks_stale_then_reconnects_and_resubscribes() -> None:
         second_subscribe = json.loads(healthy.sent[0])
         assert second_subscribe["op"] == "subscribe"
         channels = {argument["channel"] for argument in second_subscribe["args"]}
-        assert channels == {"tickers", "trades", "candle1m", "books"}
+        assert channels == {"tickers", "trades", "books"}
 
     asyncio.run(scenario())
 

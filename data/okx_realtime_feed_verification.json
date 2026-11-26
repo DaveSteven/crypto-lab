@@ -1,0 +1,58 @@
+{
+  "verification": "okx_public_websocket_feed",
+  "data_source": "OKX public WebSocket (wss://ws.okx.com:8443/ws/v5/public)",
+  "channels": [
+    "tickers",
+    "trades",
+    "candle1m",
+    "books"
+  ],
+  "instrument": "okx:SPOT:BTC/USDT",
+  "duration_seconds": 15,
+  "started_at_utc": "2026-11-26T02:04:12.275946+00:00",
+  "finished_at_utc": "2026-11-26T02:04:12.275964+00:00",
+  "subscription": {
+    "messages_received": 276,
+    "subscription_errors": 0,
+    "reconnects": 0,
+    "resynchronizations": 0,
+    "stale_transitions": 1
+  },
+  "canonical_events": {
+    "by_type": {
+      "TICKER": 97,
+      "CANDLE": 11,
+      "TRADE": 17
+    },
+    "instruments": [
+      "okx:SPOT:BTC/USDT"
+    ],
+    "first_received_ts_ms": 1795658637393,
+    "last_received_ts_ms": 1795658652098,
+    "trade_sides": {
+      "BUY": 14,
+      "SELL": 3
+    },
+    "closed_candles": 1,
+    "unclosed_candles": 10
+  },
+  "order_book_views": 147,
+  "latest_ticker": {
+    "bid": "60838.1",
+    "ask": "60838.2",
+    "last": "60838.2",
+    "exchange_ts_ms": 1795658652074,
+    "quality": "VALID"
+  },
+  "latest_order_book": {
+    "sequence_id": "85102748205",
+    "best_bid": "60838.1",
+    "best_ask": "60838.2",
+    "received_ts_ms": 1795658652215
+  },
+  "hub_publication_counts": {
+    "hub:TICKER": 97,
+    "hub:CANDLE": 11,
+    "hub:TRADE": 17
+  }
+}
