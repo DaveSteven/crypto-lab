@@ -56,7 +56,8 @@ export function OrderEntryPanel() {
 
   const marketOk = (quality?.status ?? 'VALID') === 'VALID'
   const connected = display !== 'offline'
-  const tradable = marketOk && connected
+  const accountSynced = useTradingStore((state) => state.synced)
+  const tradable = marketOk && connected && accountSynced
 
   // A price picked from the order book switches the draft to LIMIT. Subscribing
   // only reacts to picks made after mount (stale picks are ignored).
@@ -141,7 +142,12 @@ export function OrderEntryPanel() {
       <form className="space-y-3 p-3" onSubmit={handleSubmit} noValidate>
         {!tradable && (
           <p role="alert" className="rounded-[6px] bg-red-50 px-2 py-1.5 text-xs text-red-700">
-            {marketOk ? '连接断开，自动重连中。' : `行情状态异常（${quality?.reason ?? ''}）。`}下单已暂停。
+            {!marketOk
+              ? `行情状态异常（${quality?.reason ?? ''}）。`
+              : !connected
+                ? '连接断开，自动重连中。'
+                : '账户状态同步中。'}
+            下单已暂停。
           </p>
         )}
 

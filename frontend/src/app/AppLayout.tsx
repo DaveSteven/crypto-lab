@@ -1,6 +1,10 @@
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet } from 'react-router-dom'
+import { RestClient } from '@/shared/api/rest'
+import { switchEnvironment } from './environmentSwitch'
 import { cn } from '@/shared/lib/utils'
-import { Badge, Button, StatusDot } from '@/shared/ui'
+import { Badge, StatusDot } from '@/shared/ui'
 import { connectionDisplay, useConnectionStore } from './connectionStore'
 import { EnvironmentGate } from './EnvironmentGate'
 import { useSessionStore } from './sessionStore'
@@ -17,14 +21,45 @@ const STATUS_LABEL: Record<string, string> = {
 
 function EnvironmentSelector() {
   const session = useSessionStore((state) => state.session)
+  const queryClient = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+  const environments = useQuery({
+    queryKey: ['environments'],
+    queryFn: () => new RestClient().listEnvironments(50),
+    enabled: session !== null,
+  })
   if (session === null) return null
+  const options = environments.data ?? []
   return (
-    <span
-      className="numeric text-xs text-ink-muted"
-      title={`模拟环境 ${session.environmentId} · 账户 ${session.accountId}`}
-    >
-      {session.environmentId.slice(0, 12)}…
-    </span>
+    <label className="flex items-center gap-1 text-xs text-ink-muted">
+      <span className="sr-only">当前模拟环境</span>
+      <select
+        aria-label="当前模拟环境"
+        className="h-7 max-w-[180px] rounded-[6px] border border-line bg-surface px-2 text-xs text-ink"
+        title={`模拟环境 ${session.environmentId} · 账户 ${session.accountId}`}
+        value={session.environmentId}
+        onChange={(event) => {
+          setError(null)
+          switchEnvironment(event.target.value, queryClient).catch((reason: unknown) =>
+            setError(reason instanceof Error ? reason.message : String(reason)),
+          )
+        }}
+      >
+        {!options.some((item) => item.environment_id === session.environmentId) && (
+          <option value={session.environmentId}>{session.environmentId.slice(0, 12)}…</option>
+        )}
+        {options.map((item) => (
+          <option key={item.environment_id} value={item.environment_id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+      {error !== null && (
+        <span role="alert" className="text-negative">
+          {error}
+        </span>
+      )}
+    </label>
   )
 }
 
@@ -40,7 +75,6 @@ function ConnectionBadge() {
 }
 
 export function AppLayout() {
-  const clearSession = useSessionStore((state) => state.clearSession)
   const instrumentId = useInstrumentStore((state) => state.instrumentId)
   const quality = useMarketStore((state) => state.quality[instrumentId])
   const lastEventTsMs = useConnectionStore((state) => state.lastEventTsMs)
@@ -77,24 +111,34 @@ export function AppLayout() {
             >
               总览
             </NavLink>
+            <NavLink
+              to="/markets"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-[6px] px-3 py-1.5 text-sm transition-colors duration-150',
+                  isActive ? 'bg-elevated font-medium text-brand' : 'text-ink-secondary hover:bg-elevated/60',
+                )
+              }
+            >
+              市场
+            </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <EnvironmentSelector />
             {/* Paper Trading identity (docs/12 §6.2): stable and restrained. */}
             <Badge tone="brand">Paper Trading</Badge>
             <ConnectionBadge />
-            {/* Settings entry appears with the Settings page (Task 1.12.11). */}
-            <Button
-              variant="ghost"
-              size="compact"
-              onClick={() => {
-                // Session reset lives here until the Settings page exists.
-                clearSession()
-              }}
-              title="重置本地会话"
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-[6px] px-3 py-1.5 text-sm transition-colors duration-150',
+                  isActive ? 'bg-elevated font-medium text-brand' : 'text-ink-secondary hover:bg-elevated/60',
+                )
+              }
             >
-              重置
-            </Button>
+              设置
+            </NavLink>
           </div>
         </header>
 

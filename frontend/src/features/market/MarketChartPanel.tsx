@@ -187,7 +187,7 @@ export function MarketChartPanel() {
 
   const markers = useMemo(
     () => buildTradeMarkers(executions, instrument, interval),
-    [executions, interval],
+    [executions, instrument, interval],
   )
   useEffect(() => {
     markersRef.current?.setMarkers(

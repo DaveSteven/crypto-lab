@@ -248,8 +248,12 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ##### Task 1.12.11 — Markets & Settings
 
-- [ ] Markets 页（已接入品种、质量列、点击进入 Trading）。
-- [ ] Settings 页（环境/账户/工作区/系统状态，§17）、环境选择器进顶栏、Query 缓存环境隔离。
+- [x] Markets 页 `/markets`（§16）：仅列出 `GET /api/v1/market/instruments` 的实际接入品种；交易所、最新价、24H 涨跌（派生）、24H 成交量、数据质量；搜索、排序（缺失值始终排最后）；点击进入 Trading 并选中该品种。缺失字段 `--`；有 ticker 且无降级事件时质量视为有效（与图表/下单一致）。
+- [x] 交易品种可选：新增 `instrumentStore`，图表、订单簿/成交、下单面板、状态栏均随所选品种（BTC/USDT、ETH/USDT）；切换品种时下单草稿重置；订单请求使用所选品种与对应资产标签。
+- [x] Settings 页 `/settings`（§17）：模拟环境（列表、当前标记、切换、创建并切换；Contract 不提供删除/重置，页面明示）、账户（默认延迟/手续费配置标注“后端暂未提供”）、工作区（恢复默认面板布局、时区、清除本地会话选择需确认且不删服务端数据）、系统状态（API、WebSocket、Feed、品种与周期、数据质量、启动恢复状态含失败环境、Scheduler 配置“后端暂未提供”）。
+- [x] 顶栏环境选择器 + “设置”入口（替换临时“重置”按钮）；新增后端只读 `GET /api/v1/environments`。
+- [x] 环境切换（§17.5）：先停旧订阅，再清空交易/行情 store、详情抽屉与全部 Query 缓存，最后写入新会话；新环境快照到位前 `tradingStore.synced=false`，下单禁用并提示“账户状态同步中”；目标环境无账户时拒绝切换且不拆除当前状态。
+- 验证：vitest 129 通过（含 Markets/Settings/环境切换新增 12 项）、tsc、build、ruff 通过；后端 pytest 343 通过（PostgreSQL，独立测试库）。真实环境浏览器复查 Markets（BTC/ETH 真实行情）、Settings、创建并切换到新环境后 Overview 显示全新账户（10000 USDT、盈亏 0、无旧订单/持仓），以及无账户环境的切换被拒绝。未做：账户选择器（单账户环境不需要）；环境重命名（无 Contract 支持）。
 
 ##### Task 1.12.10-A — Account Realized PnL & Valuation Completion（2026-11-26，等待验收）
 

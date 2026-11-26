@@ -14,6 +14,8 @@ export interface PnlView {
 const UNKNOWN_PNL: PnlView = { status: 'UNKNOWN', instruments: {} }
 
 interface TradingState {
+  /** True once an authoritative snapshot of the current environment/account has been applied. */
+  synced: boolean
   pnl: PnlView
   stateVersion: number
   balances: Snapshot['balances']
@@ -50,8 +52,10 @@ export const useTradingStore = create<TradingStore>()((set) => ({
   executions: [],
   positions: [],
   pnl: UNKNOWN_PNL,
+  synced: false,
   reset: () =>
     set({
+      synced: false,
       stateVersion: 0,
       balances: [],
       orders: [],
@@ -61,6 +65,7 @@ export const useTradingStore = create<TradingStore>()((set) => ({
     }),
   applySnapshot: (snapshot) =>
     set({
+      synced: true,
       stateVersion: snapshot.state_version,
       balances: snapshot.balances,
       orders: snapshot.orders,

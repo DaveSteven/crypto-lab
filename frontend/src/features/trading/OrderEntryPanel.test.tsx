@@ -21,6 +21,8 @@ afterEach(() => server.resetHandlers())
 beforeEach(() => {
   useSessionStore.getState().setSession({ environmentId: 'env-1', accountId: 'a-1' })
   useMarketStore.getState().reset()
+  useTradingStore.getState().reset()
+  useTradingStore.setState({ synced: true }) // authoritative snapshot applied
   useConnectionStore.getState().update({ status: 'subscribed', resyncReason: null })
 })
 
@@ -190,5 +192,12 @@ describe('OrderEntryPanel', () => {
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => expect(body.instrument_id).toBe('okx:SPOT:ETH/USDT'))
     useInstrumentStore.getState().setInstrument('okx:SPOT:BTC/USDT')
+  })
+
+  test('trading stays disabled until the account snapshot is applied (e.g. after an environment switch)', async () => {
+    useTradingStore.getState().reset() // synced: false
+    render(<OrderEntryPanel />)
+    expect(screen.getByRole('alert')).toHaveTextContent('账户状态同步中')
+    expect(screen.getByRole('button', { name: /提交$/ })).toBeDisabled()
   })
 })

@@ -1,12 +1,15 @@
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { AppLayout } from './AppLayout'
 
 function renderLayout() {
   return render(
-    <MemoryRouter initialEntries={['/trading']}>
-      <AppLayout />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={['/trading']}>
+        <AppLayout />
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 

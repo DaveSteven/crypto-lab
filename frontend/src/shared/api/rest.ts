@@ -190,6 +190,17 @@ export class RestClient {
     return ExecutionRecordSchema.parse(body)
   }
 
+  async listEnvironments(limit = 50): Promise<Environment[]> {
+    const body = await this.request('GET', `/api/v1/environments?limit=${limit}`)
+    return parseArray(EnvironmentSchema, body)
+  }
+
+  /** Startup recovery status of the backend (docs/08 §6.1). */
+  async recoveryStatus(): Promise<{ recovered: string[]; failed: Record<string, string> }> {
+    const body = await this.request('GET', '/health/recovery', undefined, 200, undefined, false)
+    return body as { recovered: string[]; failed: Record<string, string> }
+  }
+
   /** Instruments actually connected to the shared market feed. */
   async marketInstruments(): Promise<MarketInstruments> {
     const body = await this.request('GET', '/api/v1/market/instruments')
