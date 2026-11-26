@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
-import { TradingPage } from './TradingPage'
-import { useSessionStore } from '@/state/sessionStore'
-import { useMarketStore } from '@/state/marketStore'
-import { useConnectionStore } from '@/state/connectionStore'
+import { OrderEntryPanel } from './OrderEntryPanel'
+import { useSessionStore } from '@/app/sessionStore'
+import { useMarketStore } from '@/features/market/marketStore'
+import { useConnectionStore } from '@/app/connectionStore'
 
 const server = setupServer()
 
@@ -20,12 +20,12 @@ beforeEach(() => {
   useConnectionStore.getState().update({ status: 'subscribed', resyncReason: null })
 })
 
-describe('TradingPage', () => {
+describe('OrderEntryPanel', () => {
   test('market buy requires the quote budget before submit', async () => {
     const user = userEvent.setup()
-    render(<TradingPage />)
+    render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
-    await user.click(screen.getByRole('button', { name: '提交订单意图' }))
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
     expect(screen.getByRole('alert')).toHaveTextContent('最大报价预算')
   })
 
@@ -61,10 +61,10 @@ describe('TradingPage', () => {
         )
       }),
     )
-    render(<TradingPage />)
+    render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
-    await user.type(screen.getByLabelText('最大报价预算（USDT，延迟市价买必填）'), '105')
-    await user.click(screen.getByRole('button', { name: '提交订单意图' }))
+    await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('订单已提交')
     })
@@ -88,10 +88,10 @@ describe('TradingPage', () => {
         ),
       ),
     )
-    render(<TradingPage />)
+    render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
-    await user.type(screen.getByLabelText('最大报价预算（USDT，延迟市价买必填）'), '105')
-    await user.click(screen.getByRole('button', { name: '提交订单意图' }))
+    await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('MARKET_DATA_UNAVAILABLE')
     })
@@ -110,8 +110,8 @@ describe('TradingPage', () => {
       payload: { quality_status: 'STALE', reason: 'market data is stale' },
       instrument_id: 'okx:SPOT:BTC/USDT',
     })
-    render(<TradingPage />)
+    render(<OrderEntryPanel />)
     expect(screen.getByRole('alert')).toHaveTextContent('下单已暂停')
-    expect(screen.getByRole('button', { name: /提交订单意图/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /提交/ })).toBeDisabled()
   })
 })

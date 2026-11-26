@@ -3,11 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
-import { OrdersPage } from './OrdersPage'
-import { useSessionStore } from '@/state/sessionStore'
-import { useTradingStore } from '@/state/tradingStore'
-import type { Snapshot } from '@/api/schemas'
-import { gateway } from '@/realtime/gateway'
+import { OrdersTable } from './OrdersTable'
+import { useSessionStore } from '@/app/sessionStore'
+import { useTradingStore } from '@/features/trading/tradingStore'
+import type { Snapshot } from '@/shared/api/schemas'
+import { gateway } from '@/app/gateway'
 
 const server = setupServer()
 
@@ -56,9 +56,9 @@ beforeEach(() => {
   vi.spyOn(gateway, 'resyncNow').mockResolvedValue(undefined)
 })
 
-describe('OrdersPage', () => {
+describe('OrdersTable', () => {
   test('renders orders with latency and scheduler lag columns', () => {
-    render(<OrdersPage />)
+    render(<OrdersTable filter="history" emptyMessage="暂无" />)
     expect(screen.getByText('500 ms')).toBeVisible()
     expect(screen.getByText('600 ms')).toBeVisible()
     expect(screen.getByText('100 ms')).toBeVisible()
@@ -82,7 +82,7 @@ describe('OrdersPage', () => {
         )
       }),
     )
-    render(<OrdersPage />)
+    render(<OrdersTable filter="history" emptyMessage="暂无" />)
     await user.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => {
       expect(idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
@@ -107,7 +107,7 @@ describe('OrdersPage', () => {
         ),
       ),
     )
-    render(<OrdersPage />)
+    render(<OrdersTable filter="history" emptyMessage="暂无" />)
     await user.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('INVALID_ORDER_STATE')

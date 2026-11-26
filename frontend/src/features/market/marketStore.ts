@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import { barFromPayload, candleKey, mergeCandlePage, upsertCandle, type CandleBar } from '@/market/candles'
-import type { MarketEvent, Ticker } from '@/api/schemas'
-import { Ticker as TickerSchema } from '@/api/schemas'
+import { barFromPayload, candleKey, mergeCandlePage, upsertCandle, type CandleBar } from '@/features/market/candles'
+import type { MarketEvent, Ticker } from '@/shared/api/schemas'
+import { Ticker as TickerSchema } from '@/shared/api/schemas'
 
 export interface TickerView {
   ticker: Ticker

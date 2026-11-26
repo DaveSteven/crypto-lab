@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { OrderCreateRequest } from '@/api/rest'
-import { LatencyPreset } from '@/api/schemas'
+import type { OrderCreateRequest } from '@/shared/api/rest'
+import { LatencyPreset } from '@/shared/api/schemas'
 
 const DecimalText = z
   .string()

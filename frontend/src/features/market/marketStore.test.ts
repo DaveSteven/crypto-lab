@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { useMarketStore } from './marketStore'
-import type { MarketEvent } from '@/api/schemas'
+import type { MarketEvent } from '@/shared/api/schemas'
 
 const TICKER_EVENT: MarketEvent = {
   protocol_version: '1.0.0',

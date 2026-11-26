@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { WSStatus } from '@/api/ws'
+import type { WSStatus } from '@/shared/api/ws'
 
 export type ConnectionDisplay = 'idle' | 'connecting' | 'online' | 'resync' | 'offline'
 

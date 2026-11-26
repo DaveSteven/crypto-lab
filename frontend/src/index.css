@@ -1,1 +1,154 @@
 @import "tailwindcss";
+
+/*
+ * Dark Theme Tokens — docs/12 §4.1 (Accepted, Teal Design System).
+ * All colors live here as semantic CSS variables; business components
+ * must reference tokens, never hardcode colors.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --background-canvas: #101418;
+  --background-surface: #181e25;
+  --background-elevated: #202832;
+
+  /* Borders */
+  --border-default: #303943;
+  --border-strong: #45505c;
+
+  /* Text */
+  --text-primary: #e8edf2;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Brand (never used for P&L semantics) */
+  --brand-primary: #2dd4bf;
+  --brand-hover: #5eead4;
+
+  /* Semantic */
+  --semantic-positive: #22c55e;
+  --semantic-negative: #ef4444;
+  --semantic-warning: #f59e0b;
+  --semantic-info: #60a5fa;
+  --semantic-neutral: #94a3b8;
+
+  /* Actions */
+  --action-buy: #15803d;
+  --action-sell: #b91c1c;
+}
+
+@theme inline {
+  --color-canvas: var(--background-canvas);
+  --color-surface: var(--background-surface);
+  --color-elevated: var(--background-elevated);
+  --color-line: var(--border-default);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-muted: var(--text-muted);
+  --color-brand: var(--brand-primary);
+  --color-brand-hover: var(--brand-hover);
+  --color-positive: var(--semantic-positive);
+  --color-negative: var(--semantic-negative);
+  --color-warning: var(--semantic-warning);
+  --color-info: var(--semantic-info);
+  --color-neutral: var(--semantic-neutral);
+  --color-buy: var(--action-buy);
+  --color-sell: var(--action-sell);
+
+  /* Component radii — docs/12 §4.6 */
+  --radius-panel: 4px;
+  --radius-control: 6px;
+  --radius-dialog: 8px;
+
+  /* Font stack — docs/12 §4.3: local/system fonts only, no CDN */
+  --font-sans:
+    "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--background-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Financial figures always render with tabular numerals (docs/12 §4.4). */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/*
+ * Static learning tooltip (docs/12 §14.4): hover AND keyboard focus,
+ * pure CSS, no animation library.
+ */
+.term-tip {
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dotted var(--border-strong);
+}
+
+.term-tip > .term-tip-body {
+  display: none;
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 240px;
+  padding: 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--background-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.term-tip:hover > .term-tip-body,
+.term-tip:focus > .term-tip-body,
+.term-tip:focus-within > .term-tip-body {
+  display: block;
+}
+
+/* Desktop-only guard (docs/12 §21): below 1280px show a plain notice. */
+.min-viewport-hint {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .desktop-shell {
+    display: none;
+  }
+  .min-viewport-hint {
+    display: flex;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    padding: 24px;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

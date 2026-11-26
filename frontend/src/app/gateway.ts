@@ -1,10 +1,10 @@
-import { RestClient } from '@/api/rest'
-import { TradingStateSync } from '@/api/sync'
-import { WSClient } from '@/api/ws'
-import type { TopicFilter } from '@/api/schemas'
-import { useConnectionStore } from '@/state/connectionStore'
-import { useMarketStore } from '@/state/marketStore'
-import { useTradingStore } from '@/state/tradingStore'
+import { RestClient } from '@/shared/api/rest'
+import { TradingStateSync } from '@/shared/api/sync'
+import { WSClient } from '@/shared/api/ws'
+import type { TopicFilter } from '@/shared/api/schemas'
+import { useConnectionStore } from '@/app/connectionStore'
+import { useMarketStore } from '@/features/market/marketStore'
+import { useTradingStore } from '@/features/trading/tradingStore'
 
 export interface GatewayDeps {
   createRest?: () => RestClient

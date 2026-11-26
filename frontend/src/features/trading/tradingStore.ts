@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { Snapshot, TradingEvent } from '@/api/schemas'
-import type { TradingStateSink } from '@/api/sync'
+import type { Snapshot, TradingEvent } from '@/shared/api/schemas'
+import type { TradingStateSink } from '@/shared/api/sync'
 
 interface TradingState {
   stateVersion: number

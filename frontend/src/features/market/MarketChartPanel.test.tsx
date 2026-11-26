@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const candleHistory = vi.fn()
 
-vi.mock('@/api/client', () => ({
+vi.mock('@/shared/api/client', () => ({
   rest: { candleHistory: (...args: unknown[]) => candleHistory(...args) },
 }))
 
@@ -23,9 +23,9 @@ vi.mock('lightweight-charts', () => ({
   createChart: vi.fn(() => chartApi),
 }))
 
-import { MarketPage, INSTRUMENT } from './MarketPage'
-import { useMarketStore } from '@/state/marketStore'
-import { useConnectionStore } from '@/state/connectionStore'
+import { MarketChartPanel, INSTRUMENT } from './MarketChartPanel'
+import { useMarketStore } from '@/features/market/marketStore'
+import { useConnectionStore } from '@/app/connectionStore'
 
 function historyResponse(count: number) {
   return {
@@ -56,7 +56,7 @@ beforeEach(() => {
   useConnectionStore.getState().update({ status: 'subscribed', resyncReason: null })
 })
 
-describe('MarketPage', () => {
+describe('MarketChartPanel', () => {
   test('loads history, renders ticker and chart container', async () => {
     useMarketStore.getState().applyMarketEvent({
       protocol_version: '1.0.0',
@@ -70,7 +70,7 @@ describe('MarketPage', () => {
       payload: { bid: '100.9', ask: '101.1', last: '101' },
       instrument_id: INSTRUMENT,
     })
-    render(<MarketPage />)
+    render(<MarketChartPanel />)
     expect(await screen.findByText('BTC/USDT')).toBeVisible()
     expect(screen.getByTestId('candle-chart')).toBeVisible()
     expect(screen.getByText(/来源：OKX 公共行情/)).toBeVisible()
@@ -80,7 +80,7 @@ describe('MarketPage', () => {
 
   test('switching interval fetches that interval history', async () => {
     const user = userEvent.setup()
-    render(<MarketPage />)
+    render(<MarketChartPanel />)
     await waitFor(() => expect(candleHistory).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: '5m' }))
     await waitFor(() => expect(candleHistory).toHaveBeenCalledWith(INSTRUMENT, '5m', { limit: 200 }))
@@ -88,7 +88,7 @@ describe('MarketPage', () => {
 
   test('load-earlier paginates with the earliest open time as cursor', async () => {
     const user = userEvent.setup()
-    render(<MarketPage />)
+    render(<MarketChartPanel />)
     await waitFor(() => expect(useMarketStore.getState().candles[`${INSTRUMENT}|1m`]).toHaveLength(3))
     await user.click(screen.getByRole('button', { name: '加载更早' }))
     await waitFor(() =>
@@ -112,13 +112,14 @@ describe('MarketPage', () => {
       payload: { quality_status: 'STALE', reason: 'market data is stale' },
       instrument_id: INSTRUMENT,
     })
-    render(<MarketPage />)
+    render(<MarketChartPanel />)
     expect(screen.getByRole('alert')).toHaveTextContent(/模拟撮合已暂停/)
   })
 
   test('offline connection shows the reconnect notice', () => {
     useConnectionStore.getState().update({ status: 'closed' })
-    render(<MarketPage />)
-    expect(screen.getByRole('status')).toHaveTextContent(/连接断开/)
+    render(<MarketChartPanel />)
+    const notices = screen.getAllByRole('status')
+    expect(notices.some((node) => node.textContent?.includes('连接断开'))).toBe(true)
   })
 })

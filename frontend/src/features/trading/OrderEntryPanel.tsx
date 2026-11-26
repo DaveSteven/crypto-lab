@@ -1,15 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import { ApiError } from '@/api/rest'
-import { rest } from '@/api/client'
-import { useConnectionStore, connectionDisplay } from '@/state/connectionStore'
-import { useMarketStore } from '@/state/marketStore'
-import { useSessionStore } from '@/state/sessionStore'
+import { ApiError } from '@/shared/api/rest'
+import { rest } from '@/shared/api/client'
+import { useConnectionStore, connectionDisplay } from '@/app/connectionStore'
+import { useMarketStore } from '@/features/market/marketStore'
+import { useSessionStore } from '@/app/sessionStore'
 import {
   LATENCY_OPTIONS,
   toOrderCreateRequest,
   validateOrderForm,
   type OrderFormValues,
-} from '@/trading/orderForm'
+} from './orderForm'
+import { Button, Input, Label, Select } from '@/shared/ui'
 
 const INSTRUMENT = 'okx:SPOT:BTC/USDT'
 
@@ -24,7 +25,9 @@ const EMPTY_FORM: OrderFormValues = {
   custom_latency_ms: undefined,
 }
 
-export function TradingPage() {
+/** Order Entry (docs/12 §11): order intent only, confirmation dialog and
+ * allocation shortcuts arrive with Task 1.12.8. */
+export function OrderEntryPanel() {
   const session = useSessionStore((state) => state.session)
   const quality = useMarketStore((state) => state.quality[INSTRUMENT])
   const status = useConnectionStore((state) => state.status)
@@ -60,7 +63,12 @@ export function TradingPage() {
       setMessage(
         `订单已提交：${order.order_id.slice(0, 8)}…（状态 ${order.status}）。成交价格与结果由模拟撮合决定。`,
       )
-      setValues({ ...EMPTY_FORM, side: values.side, order_type: values.order_type, latency_preset: values.latency_preset })
+      setValues({
+        ...EMPTY_FORM,
+        side: values.side,
+        order_type: values.order_type,
+        latency_preset: values.latency_preset,
+      })
     } catch (reason) {
       if (reason instanceof ApiError) {
         setMessage(`下单失败（${reason.code}）：${reason.message}`)
@@ -73,27 +81,23 @@ export function TradingPage() {
   }
 
   return (
-    <section aria-labelledby="trading-title" className="space-y-4">
-      <div className="flex items-center gap-4">
-        <h1 id="trading-title" className="text-lg font-semibold">
-          模拟交易
-        </h1>
-        <span className="text-sm text-muted-foreground">{INSTRUMENT}</span>
-        {!marketOk && (
-          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
-            行情不可用（{quality?.status ?? '未知'}），暂停下单
-          </span>
+    <section
+      aria-label="下单"
+      className="flex h-full flex-col overflow-auto rounded-[4px] border border-line bg-surface"
+    >
+      <header className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
+        <h2 className="text-sm font-medium text-ink">下单</h2>
+        {!marketOk && <Badge text="行情不可用" />}
+      </header>
+
+      <form className="space-y-3 p-3" onSubmit={handleSubmit} noValidate>
+        {!tradable && (
+          <p role="alert" className="rounded-[6px] bg-red-50 px-2 py-1.5 text-xs text-red-700">
+            {marketOk ? '连接断开，自动重连中。' : `行情状态异常（${quality?.reason ?? ''}）。`}下单已暂停。
+          </p>
         )}
-      </div>
 
-      {!tradable && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          {marketOk ? '连接断开，自动重连中。' : `行情状态异常（${quality?.reason ?? ''}）。`}为保护模拟结果，下单已暂停。
-        </p>
-      )}
-
-      <form className="max-w-xl space-y-3" onSubmit={handleSubmit} noValidate>
-        <div className="flex gap-2" role="group" aria-label="方向">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="方向">
           {(['BUY', 'SELL'] as const).map((side) => (
             <button
               key={side}
@@ -101,8 +105,10 @@ export function TradingPage() {
               onClick={() => update({ side })}
               className={
                 values.side === side
-                  ? 'rounded-md bg-accent px-4 py-1.5 text-sm font-medium'
-                  : 'rounded-md px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent/50'
+                  ? side === 'BUY'
+                    ? 'h-9 rounded-[6px] bg-buy font-medium text-white'
+                    : 'h-9 rounded-[6px] bg-sell font-medium text-white'
+                  : 'h-9 rounded-[6px] border border-line text-sm text-ink-secondary hover:bg-elevated'
               }
             >
               {side === 'BUY' ? '买入' : '卖出'}
@@ -110,7 +116,7 @@ export function TradingPage() {
           ))}
         </div>
 
-        <div className="flex gap-2" role="group" aria-label="订单类型">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="订单类型">
           {(['MARKET', 'LIMIT'] as const).map((type) => (
             <button
               key={type}
@@ -118,8 +124,8 @@ export function TradingPage() {
               onClick={() => update({ order_type: type })}
               className={
                 values.order_type === type
-                  ? 'rounded-md bg-accent px-4 py-1.5 text-sm font-medium'
-                  : 'rounded-md px-4 py-1.5 text-sm text-muted-foreground hover:bg-accent/50'
+                  ? 'h-9 rounded-[6px] bg-elevated text-sm font-medium text-ink'
+                  : 'h-9 rounded-[6px] border border-line text-sm text-ink-secondary hover:bg-elevated'
               }
             >
               {type === 'MARKET' ? '市价' : '限价'}
@@ -127,95 +133,106 @@ export function TradingPage() {
           ))}
         </div>
 
-        <label className="block text-sm">
+        <Label>
           数量（BTC）
-          <input
-            className="mt-1 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+          <Input
+            className="mt-1 numeric"
             value={values.quantity}
             onChange={(event) => update({ quantity: event.target.value })}
             inputMode="decimal"
             required
           />
-        </label>
+        </Label>
 
         {values.order_type === 'LIMIT' && (
-          <label className="block text-sm">
+          <Label>
             限价（USDT）
-            <input
-              className="mt-1 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+            <Input
+              className="mt-1 numeric"
               value={values.limit_price ?? ''}
               onChange={(event) => update({ limit_price: event.target.value || undefined })}
               inputMode="decimal"
             />
-          </label>
+          </Label>
         )}
 
         {values.order_type === 'MARKET' && values.side === 'BUY' && (
-          <label className="block text-sm">
-            最大报价预算（USDT，延迟市价买必填）
-            <input
-              className="mt-1 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+          <Label>
+            最大报价预算（USDT，含手续费）
+            <Input
+              className="mt-1 numeric"
               value={values.max_quote_budget ?? ''}
               onChange={(event) => update({ max_quote_budget: event.target.value || undefined })}
               inputMode="decimal"
             />
-          </label>
+          </Label>
         )}
 
-        <label className="block text-sm">
+        <Label>
           模拟执行延迟
-          <select
-            className="mt-1 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+          <Select
+            className="mt-1"
             value={values.latency_preset}
-            onChange={(event) => update({ latency_preset: event.target.value as OrderFormValues['latency_preset'] })}
+            onChange={(event) =>
+              update({ latency_preset: event.target.value as OrderFormValues['latency_preset'] })
+            }
           >
             {LATENCY_OPTIONS.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Label>
 
         {values.latency_preset === 'CUSTOM' && (
-          <label className="block text-sm">
+          <Label>
             自定义延迟（毫秒）
-            <input
-              className="mt-1 w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+            <Input
+              className="mt-1 numeric"
               value={values.custom_latency_ms ?? ''}
               onChange={(event) =>
-                update({ custom_latency_ms: event.target.value === '' ? undefined : Number(event.target.value) })
+                update({
+                  custom_latency_ms:
+                    event.target.value === '' ? undefined : Number(event.target.value),
+                })
               }
               inputMode="numeric"
             />
-          </label>
+          </Label>
         )}
 
         {errors.length > 0 && (
-          <ul role="alert" className="list-disc space-y-1 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <ul role="alert" className="list-disc space-y-1 rounded-[6px] bg-red-50 px-2 py-1.5 text-xs text-red-700">
             {errors.map((issue) => (
               <li key={issue}>{issue}</li>
             ))}
           </ul>
         )}
         {message !== null && (
-          <p role="status" className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          <p role="status" className="rounded-[6px] bg-info/10 px-2 py-1.5 text-xs text-info">
             {message}
           </p>
         )}
 
-        <button
+        <Button
+          variant={values.side === 'BUY' ? 'buy' : 'sell'}
+          className="w-full"
           type="submit"
           disabled={submitting || !tradable || session === null}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
-          {submitting ? '提交中…' : '提交订单意图'}
-        </button>
-        <p className="text-xs text-muted-foreground">
-          前端只提交订单意图；成交价格、手续费与成交结果完全由服务端模拟撮合决定。
-          每次提交使用新的幂等键，重复点击不会产生重复订单。
+          {submitting ? '提交中…' : values.side === 'BUY' ? '买入提交' : '卖出提交'}
+        </Button>
+        <p className="text-[11px] leading-relaxed text-ink-muted">
+          前端只提交订单意图；成交价格、手续费与结果由服务端模拟撮合决定。每次提交使用新的幂等键。
         </p>
       </form>
     </section>
+  )
+}
+
+function Badge({ text }: { text: string }) {
+  return (
+    <span className="rounded-full bg-negative/15 px-2 py-0.5 text-xs text-negative">{text}</span>
   )
 }

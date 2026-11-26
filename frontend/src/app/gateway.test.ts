@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { RealtimeGateway } from './gateway'
-import { WSClient } from '@/api/ws'
-import { useConnectionStore } from '@/state/connectionStore'
-import { useTradingStore } from '@/state/tradingStore'
-import { useSessionStore } from '@/state/sessionStore'
+import { WSClient } from '@/shared/api/ws'
+import { useConnectionStore } from '@/app/connectionStore'
+import { useTradingStore } from '@/features/trading/tradingStore'
+import { useSessionStore } from '@/app/sessionStore'
 
 class FakeSocket {
   readyState = 1
@@ -27,7 +27,7 @@ const createdClients: WSClient[] = []
 
 function makeGateway(snapshot: object) {
   const socket = new FakeSocket()
-  const fakeRest = { snapshot: async () => snapshot } as unknown as import('@/api/rest').RestClient
+  const fakeRest = { snapshot: async () => snapshot } as unknown as import('@/shared/api/rest').RestClient
   const gateway = new RealtimeGateway({
     createRest: () => fakeRest,
     createClient: (url: string) => {

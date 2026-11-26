@@ -5,8 +5,8 @@ import { setupServer } from 'msw/node'
 import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { EnvironmentGate } from './EnvironmentGate'
-import { useSessionStore } from '@/state/sessionStore'
-import { gateway } from '@/realtime/gateway'
+import { useSessionStore } from '@/app/sessionStore'
+import { gateway } from '@/app/gateway'
 
 const server = setupServer()
 

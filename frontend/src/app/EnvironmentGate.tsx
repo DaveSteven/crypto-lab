@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useSessionStore } from '@/state/sessionStore'
-import { useTradingStore } from '@/state/tradingStore'
-import { useMarketStore } from '@/state/marketStore'
-import { gateway } from '@/realtime/gateway'
-import { RestClient } from '@/api/rest'
+import { useSessionStore } from '@/app/sessionStore'
+import { useTradingStore } from '@/features/trading/tradingStore'
+import { useMarketStore } from '@/features/market/marketStore'
+import { gateway } from '@/app/gateway'
+import { RestClient } from '@/shared/api/rest'
 
 const rest = new RestClient()
 

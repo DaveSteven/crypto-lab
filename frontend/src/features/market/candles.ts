@@ -1,4 +1,4 @@
-import type { Candle } from '@/api/schemas'
+import type { Candle } from '@/shared/api/schemas'
 
 export interface CandleBar {
   eventId: string
