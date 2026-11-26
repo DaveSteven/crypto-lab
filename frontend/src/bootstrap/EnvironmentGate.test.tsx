@@ -1,0 +1,94 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { setupServer } from 'msw/node'
+import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
+import { EnvironmentGate } from './EnvironmentGate'
+import { useSessionStore } from '@/state/sessionStore'
+import { gateway } from '@/realtime/gateway'
+
+const server = setupServer()
+
+beforeAll(() => server.listen())
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
+beforeEach(() => {
+  useSessionStore.getState().clearSession()
+  vi.spyOn(gateway, 'start').mockImplementation(() => undefined)
+  vi.spyOn(gateway, 'stop').mockImplementation(() => undefined)
+})
+
+function renderGate() {
+  return render(
+    <MemoryRouter>
+      <EnvironmentGate>
+        <div>受保护的页面内容</div>
+      </EnvironmentGate>
+    </MemoryRouter>,
+  )
+}
+
+describe('EnvironmentGate', () => {
+  test('shows the bootstrap form when no session exists', () => {
+    renderGate()
+    expect(screen.getByLabelText('环境名称')).toBeVisible()
+    expect(screen.queryByText('受保护的页面内容')).not.toBeInTheDocument()
+  })
+
+  test('creates environment and account, then enters the session', async () => {
+    const user = userEvent.setup()
+    const envCalls: { key: string; body: unknown }[] = []
+    server.use(
+      http.post('*/api/v1/environments', ({ request }) => {
+        envCalls.push({
+          key: request.headers.get('Idempotency-Key') ?? '',
+          body: {},
+        })
+        return HttpResponse.json(
+          {
+            environment_id: 'env-new',
+            name: '本地模拟环境',
+            status: 'ACTIVE',
+            created_ts_ms: 1_000,
+            updated_ts_ms: 1_000,
+          },
+          { status: 201 },
+        )
+      }),
+      http.post('*/api/v1/environments/env-new/accounts', ({ request }) => {
+        expect(request.headers.get('Idempotency-Key')).toBeTruthy()
+        return HttpResponse.json(
+          {
+            account_id: 'a-new',
+            exchange_id: 'okx',
+            name: 'Paper Account',
+            created_ts_ms: 1_000,
+            balances: [{ asset: 'USDT', available: '10000', locked: '0' }],
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    renderGate()
+    await user.click(screen.getByRole('button', { name: '创建并进入' }))
+    await vi.waitFor(() => {
+      expect(useSessionStore.getState().session).toEqual({
+        environmentId: 'env-new',
+        accountId: 'a-new',
+      })
+    })
+    expect(envCalls[0].key).toMatch(/^[0-9a-f-]{36}$/)
+    expect(gateway.start).toHaveBeenCalledWith('env-new', 'a-new', ['okx:SPOT:BTC/USDT'])
+    expect(screen.getByText('受保护的页面内容')).toBeInTheDocument()
+  })
+
+  test('reset clears the session and stops the gateway', async () => {
+    useSessionStore.getState().setSession({ environmentId: 'env-1', accountId: 'a-1' })
+    renderGate()
+    await userEvent.click(screen.getByRole('button', { name: '重置会话' }))
+    expect(useSessionStore.getState().session).toBeNull()
+    expect(gateway.stop).toHaveBeenCalled()
+  })
+})

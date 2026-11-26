@@ -15,21 +15,13 @@ type AnySocket = {
   readyState: number
 }
 
-export interface WSClientCallbacks {
-  onStatus?: (status: WSStatus) => void
-  /** Business messages after envelope validation and ordering checks. */
-  onMessage?: (message: ServerMessage) => void
-  /** Trading delivery gap or explicit resync.required from the server. */
-  onResyncRequired?: (reason: string) => void
-}
+export type Unsubscribe = () => void
 
 export interface WSClientOptions {
   url: string
   /** Defaults to the browser WebSocket with the crypto-lab.v1 subprotocol. */
   socketFactory?: (url: string) => AnySocket
   backoffMs?: (attempt: number) => number
-  callbacks?: WSClientCallbacks
-  now?: () => number
 }
 
 /**
@@ -52,7 +44,9 @@ export class WSClient {
   private readonly url: string
   private readonly socketFactory: (url: string) => AnySocket
   private readonly backoffMs: (attempt: number) => number
-  readonly callbacks: WSClientCallbacks
+  private readonly statusListeners = new Set<(status: WSStatus) => void>()
+  private readonly messageListeners = new Set<(message: ServerMessage) => void>()
+  private readonly resyncListeners = new Set<(reason: string) => void>()
   private socket: AnySocket | null = null
   private requestCounter = 0
   private readonly pendingRequests = new Map<string, (ack: { replayed?: number }) => void>()
@@ -68,7 +62,28 @@ export class WSClient {
     this.socketFactory =
       options.socketFactory ?? ((socketUrl) => new WebSocket(socketUrl, ['crypto-lab.v1']))
     this.backoffMs = options.backoffMs ?? ((attempt) => Math.min(1_000 * 2 ** attempt, 30_000))
-    this.callbacks = options.callbacks ?? {}
+  }
+
+  onStatus(listener: (status: WSStatus) => void): Unsubscribe {
+    this.statusListeners.add(listener)
+    return () => this.statusListeners.delete(listener)
+  }
+
+  /** Business messages after envelope validation and ordering checks. */
+  onMessage(listener: (message: ServerMessage) => void): Unsubscribe {
+    this.messageListeners.add(listener)
+    return () => this.messageListeners.delete(listener)
+  }
+
+  /** Trading delivery gap or explicit resync.required from the server. */
+  onResync(listener: (reason: string) => void): Unsubscribe {
+    this.resyncListeners.add(listener)
+    return () => this.resyncListeners.delete(listener)
+  }
+
+  /** Set the topics (re)subscribed automatically on every session.ready. */
+  setTopics(topics: TopicFilter[]): void {
+    this.subscriptions = topics
   }
 
   connect(): void {
@@ -173,7 +188,7 @@ export class WSClient {
           // Server process restarted: the replay cursor is meaningless.
           this.lastDeliverySequence = null
           this.seenEventIds.clear()
-          this.callbacks.onResyncRequired?.('stream_id changed: server restarted')
+          this.notifyResync('stream_id changed: server restarted')
           this.setStatus('resync-required')
           this.lastStreamSequence = value.stream_sequence
         } else if (this.streamId === null) {
@@ -206,11 +221,11 @@ export class WSClient {
       case 'resync.required': {
         this.lastDeliverySequence = null
         this.setStatus('resync-required')
-        this.callbacks.onResyncRequired?.(value.reason)
+        this.notifyResync(value.reason)
         return
       }
       case 'error': {
-        this.callbacks.onMessage?.(value)
+        for (const listener of this.messageListeners) listener(value)
         return
       }
       default: {
@@ -228,9 +243,7 @@ export class WSClient {
       ) {
         this.lastDeliverySequence = delivery
         this.setStatus('resync-required')
-        this.callbacks.onResyncRequired?.(
-          `delivery_sequence gap: ${this.lastDeliverySequence} -> ${delivery}`,
-        )
+        this.notifyResync(`delivery_sequence gap: ${this.lastDeliverySequence} -> ${delivery}`)
         return
       }
       this.lastDeliverySequence = delivery
@@ -242,7 +255,11 @@ export class WSClient {
       if (oldest !== undefined) this.seenEventIds.delete(oldest)
     }
     this.lastStreamSequence = Math.max(this.lastStreamSequence, value.stream_sequence)
-    this.callbacks.onMessage?.(value)
+    for (const listener of this.messageListeners) listener(value)
+  }
+
+  private notifyResync(reason: string): void {
+    for (const listener of this.resyncListeners) listener(reason)
   }
 
   private async subscribeWithResume(): Promise<void> {
@@ -257,7 +274,7 @@ export class WSClient {
 
   private setStatus(status: WSStatus): void {
     this.status = status
-    this.callbacks.onStatus?.(status)
+    for (const listener of this.statusListeners) listener(status)
   }
 
   private nextRequestId(): string {

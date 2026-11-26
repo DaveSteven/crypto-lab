@@ -29,7 +29,7 @@ export CRYPTO_LAB_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:543
 python -m crypto_lab.api
 ```
 
-服务固定绑定 `127.0.0.1:8000`，OpenAPI 位于 `http://127.0.0.1:8000/docs`。Phase 1 尚无身份认证，不得将服务监听到公网。写接口必须提供 `Idempotency-Key`，所有余额和订单均为模拟数据。Task 1.10 只提供 REST，不包含 WebSocket 实时推送。
+服务固定绑定 `127.0.0.1:8642`（可用 `CRYPTO_LAB_API_PORT` 覆盖；避开常用 8000 端口冲突），OpenAPI 位于 `http://127.0.0.1:8642/docs`。Phase 1 尚无身份认证，不得将服务监听到公网。写接口必须提供 `Idempotency-Key`，所有余额和订单均为模拟数据。Task 1.10 只提供 REST，不包含 WebSocket 实时推送。
 
 ## 本地初始化
 

@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { EnvironmentGate } from '@/bootstrap/EnvironmentGate'
+import { connectionDisplay, useConnectionStore } from '@/state/connectionStore'
 
 const NAV_ITEMS = [
   { to: '/market', label: '行情' },
@@ -9,13 +11,43 @@ const NAV_ITEMS = [
   { to: '/account', label: '账户' },
 ] as const
 
+const STATUS_LABEL: Record<string, string> = {
+  idle: '未连接',
+  connecting: '连接中…',
+  online: '实时已连接',
+  resync: '同步中…',
+  offline: '离线（自动重连）',
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  idle: 'bg-muted text-muted-foreground',
+  connecting: 'bg-amber-100 text-amber-800',
+  online: 'bg-emerald-100 text-emerald-800',
+  resync: 'bg-sky-100 text-sky-800',
+  offline: 'bg-red-100 text-red-800',
+}
+
+function ConnectionBadge() {
+  const status = useConnectionStore((state) => state.status)
+  const resyncReason = useConnectionStore((state) => state.resyncReason)
+  const display = connectionDisplay(status)
+  return (
+    <span
+      className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_CLASS[display])}
+      title={resyncReason ?? undefined}
+    >
+      {STATUS_LABEL[display]}
+    </span>
+  )
+}
+
 function AppLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="border-b">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
           <span className="text-sm font-semibold tracking-tight">Crypto Lab</span>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1" aria-label="主导航">
             {NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
@@ -33,13 +65,15 @@ function AppLayout() {
               </NavLink>
             ))}
           </nav>
-          <span className="ml-auto text-xs text-muted-foreground">
-            连接状态（1.12.3 接入）
+          <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <ConnectionBadge />
           </span>
         </div>
       </header>
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
-        <Outlet />
+        <EnvironmentGate>
+          <Outlet />
+        </EnvironmentGate>
       </main>
       <footer className="border-t">
         <p className="mx-auto max-w-7xl px-4 py-3 text-xs text-muted-foreground">

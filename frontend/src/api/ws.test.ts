@@ -47,17 +47,15 @@ function tradingEnvelope(overrides: Record<string, unknown>) {
   }
 }
 
-function connectClient(callbacks: { statuses?: WSStatus[]; resyncs?: string[] } = {}) {
+function connectClient(sinks: { statuses?: WSStatus[]; resyncs?: string[] } = {}) {
   const socket = new FakeSocket()
   const client = new WSClient({
     url: 'ws://test/ws',
     socketFactory: () => socket,
     backoffMs: () => 0,
-    callbacks: {
-      onStatus: (status) => callbacks.statuses?.push(status),
-      onResyncRequired: (reason) => callbacks.resyncs?.push(reason),
-    },
   })
+  client.onStatus((status) => sinks.statuses?.push(status))
+  client.onResync((reason) => sinks.resyncs?.push(reason))
   client.connect()
   socket.onopen?.()
   return { client, socket }
@@ -103,7 +101,7 @@ describe('WSClient', () => {
     const { client, socket } = connectClient({ statuses, resyncs })
     sessionReady(socket)
     const seen: string[] = []
-    client.callbacks.onMessage = (message) => seen.push(message.type)
+    client.onMessage((message) => seen.push(message.type))
 
     socket.serverSend(tradingEnvelope({ event_id: 'e-1', delivery_sequence: 1 }))
     socket.serverSend(tradingEnvelope({ event_id: 'e-2', delivery_sequence: 2 }))
@@ -142,10 +140,10 @@ describe('WSClient', () => {
     const { client, socket } = connectClient()
     sessionReady(socket)
     const seen: string[] = []
-    client.callbacks.onMessage = (message) => {
+    client.onMessage((message) => {
       if (!('event_id' in message)) return
       seen.push(message.event_id)
-    }
+    })
     socket.serverSend(tradingEnvelope({ event_id: 'same' }))
     socket.serverSend(tradingEnvelope({ event_id: 'same' }))
     expect(seen).toEqual(['same'])

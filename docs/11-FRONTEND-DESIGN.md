@@ -21,7 +21,7 @@
 |---|---|---|
 | 包管理 | pnpm | 工程初始化时确认本机版本 |
 | 框架 | React + TypeScript | |
-| 构建 | Vite | dev server 代理到 `127.0.0.1:8000`，规避 CORS |
+| 构建 | Vite | dev server 代理到 `127.0.0.1:8642`（后端默认端口，`VITE_API_ORIGIN` 可覆盖），规避 CORS |
 | 样式 | Tailwind CSS + shadcn/ui | |
 | 服务端状态 | TanStack Query | REST 快照、列表、轮询兜底 |
 | 客户端状态 | Zustand | 行情流、WS 连接状态、环境/账户会话 |
@@ -191,7 +191,7 @@ Endpoint：`/api/v1/ws/environments/{environment_id}`，Subprotocol `crypto-lab.
 
 ## 14. 安全与边界
 
-- dev 通过 Vite 代理访问 `127.0.0.1:8000`，无 CORS 暴露；不修改后端 CORS 配置（docs/09 §7）。
+- dev 通过 Vite 代理访问 `127.0.0.1:8642`，无 CORS 暴露；不修改后端 CORS 配置（docs/09 §7）。
 - 不引入认证、不上传任何密钥；行情与账户数据仅本机。
 - 所有页面固定可见"模拟交易声明"；不得展示任何"实盘/收益保证"措辞。
 

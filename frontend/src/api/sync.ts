@@ -41,14 +41,19 @@ export class TradingStateSync {
     this.environmentId = environmentId
     this.accountId = accountId
     this.sink = sink
-    client.callbacks.onMessage = (message) => {
-      if (message.type === 'orders' || message.type === 'balances' || message.type === 'executions' || message.type === 'positions') {
+    client.onMessage((message) => {
+      if (
+        message.type === 'orders' ||
+        message.type === 'balances' ||
+        message.type === 'executions' ||
+        message.type === 'positions'
+      ) {
         this.handleTradingEvent(message)
       }
-    }
-    client.callbacks.onResyncRequired = () => {
+    })
+    client.onResync(() => {
       void this.resync()
-    }
+    })
   }
 
   /** Run the full resync flow; safe to call again at any time. */
