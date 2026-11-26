@@ -4,11 +4,11 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V1.0 |
-| 当前阶段 | Phase 1 |
+| 文档版本 | V1.1 |
+| 当前阶段 | Phase 1 Accepted；Phase 2 前扩展任务 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
-| 状态 | Completed / Accepted（2026-11-26） |
+| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14～1.15 Pending |
 
 ## 1. 目标
 
@@ -35,6 +35,10 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.11 | 实时行情服务 | Completed |
 | 1.12 | React 前端应用 | Completed（Gate E Accepted，2026-11-26） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Completed（Accepted，2026-11-26） |
+| 1.14 | Trading Journal | Pending（Phase 2 前扩展任务） |
+| 1.15 | Chart Analysis Tools | Pending（Phase 2 前扩展任务） |
+
+Task 1.14～1.15 是 Task 1.13 完成后、Phase 2 开始前新增的独立扩展任务，不追溯改变 Task 1.13 及 Phase 1 已通过的验收结论。当前仅记录 Roadmap 与需求边界；具体架构、Contract、数据模型、子任务和验收标准须在进入对应任务前单独设计并确认。
 
 ### Task 1.1 — 模拟账户与资金流水
 
@@ -293,6 +297,40 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] 实测确认处理成本近似线性增长；继续接受 Phase 1 Known Limitation，不启动会改变撮合、流动性或事件顺序的专项优化，不引入复杂并行架构。
 
 Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTANCE-REPORT.md)。项目负责人于 2026-11-26 确认 Task 1.13 及 Phase 1 验收通过。
+
+### Task 1.14 — Trading Journal
+
+**状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
+
+目标：支持个人金融学习、交易决策记录、交易纪律训练及复盘。
+
+计划范围：
+
+- 独立交易日志页面 `/journal`。
+- 记录交易前计划、市场趋势、观察周期、交易理由，以及计划入场、止损、止盈和仓位。
+- 支持交易策略标签、交易心理与情绪记录、交易纪律 Checklist。
+- 一个日志可关联多个 Order / Fill。
+- 支持交易后复盘、经验总结，以及草稿、进行中、已完成等日志状态。
+- 按模拟环境及账户隔离，并使用 PostgreSQL 持久化。
+
+边界与约束：
+
+- Trading Journal 与核心交易引擎解耦，不重复建立订单、成交或账户盈亏的权威数据。
+- 编辑日志不得修改历史订单或成交；计划止损和止盈仅作记录，不代表自动执行订单。
+- 日志级盈亏统计必须在设计阶段明确关联成交及成本分配语义，不得自行推断或重复计算权威结果。
+- 不引入 AI 买卖建议；保持 Desktop Only，并复用现有 UI/UX Design System。
+
+### Task 1.15 — Chart Analysis Tools
+
+**状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
+
+初步范围：
+
+- 指标：MA / EMA、RSI、MACD、ATR、Bollinger Bands。
+- 绘图与测量：水平线、趋势线、价格及涨跌幅测量。
+- 图表分析设置持久化。
+
+具体数据语义、计算位置、图表交互、持久化方式、性能边界、技术方案、任务拆分及验收标准，在进入 Task 1.15 前另行设计并确认。
 
 ## 3. Task 1.1 验收标准
 
