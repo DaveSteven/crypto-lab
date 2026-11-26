@@ -57,15 +57,22 @@ class SimulatedLiquidityView:
         self._market_book = market_book
         return self.available_book()
 
-    def reset_for_resynchronized_book(self, market_book: OrderBookView) -> OrderBookView:
+    def reset_for_resynchronized_book(
+        self, market_book: OrderBookView, *, after_process_restart: bool = False
+    ) -> OrderBookView:
         current = self._market_book
         if current is not None and (
             current.exchange_id != market_book.exchange_id
             or current.instrument_id != market_book.instrument_id
         ):
             raise LiquidityError("liquidity view cannot change market identity")
-        if current is not None and (
-            market_book.synchronization_generation <= current.synchronization_generation
+        # After a process restart the exchange feed counts generations from 1 again while
+        # persisted liquidity carries the previous process's generation, so only a live
+        # restart may reset to an older-numbered generation; ordinary resyncs may not.
+        if (
+            current is not None
+            and not after_process_restart
+            and market_book.synchronization_generation <= current.synchronization_generation
         ):
             raise LiquidityError("liquidity reset requires a newer synchronization generation")
         self._market_book = market_book

@@ -123,6 +123,16 @@ class ApplicationService:
             .limit(limit)
         )
 
+    def environments_with_due_executions(self, now_ms: int) -> set[str]:
+        """Environments that have scheduled executions due (one light, lock-free query)."""
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(schema.scheduled_executions.c.environment_id)
+                .where(schema.scheduled_executions.c.scheduled_execution_ts_ms <= now_ms)
+                .distinct()
+            )
+            return {row[0] for row in rows}
+
     def list_environment_ids(self) -> list[str]:
         """All persisted environment ids, oldest first (used to restore dispatch after restart)."""
         with self.engine.connect() as connection:

@@ -103,6 +103,8 @@ def create_app(
     market_feed: Any | None = None,
     market_feed_settings: MarketFeedSettings | None = None,
     now_ms: Callable[[], int] | None = None,
+    feed_connection_factory: Callable[[str], Any] | None = None,
+    candle_client_factory: Callable[[], Any] | None = None,
 ) -> FastAPI:
     owns_engine = engine is None and service is None
     actual_engine = engine
@@ -126,7 +128,7 @@ def create_app(
             actual_engine,
             fee_schedule=fee_schedule,
             realtime_publisher=publisher,
-            candle_client=OkxCandleClient(),
+            candle_client=(candle_client_factory or OkxCandleClient)(),
             **({"now_ms": now_ms} if now_ms is not None else {}),
         )
         if feed_settings.enabled:
@@ -138,6 +140,7 @@ def create_app(
                 instruments=feed_settings.instruments,
                 now_ms=service.now_ms,
                 max_book_age_ms=feed_settings.max_book_age_ms,
+                due_environments=service.environments_with_due_executions,
             )
             if actual_market_feed is None:
                 actual_market_feed = build_market_feed(
@@ -145,6 +148,7 @@ def create_app(
                     actual_realtime,
                     on_canonical=_dispatch_canonical(dispatcher),
                     on_order_book_view=_dispatch_book(dispatcher),
+                    connection_factory=feed_connection_factory,
                 )
 
     async def _dispatch_driver() -> None:

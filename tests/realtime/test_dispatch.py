@@ -308,9 +308,7 @@ def test_due_market_order_executes_against_current_book() -> None:
     world = World()
     dispatcher = make_dispatcher(world)
     dispatcher.register_environment("env-1")
-    dispatcher.apply_order_book_view(
-        book_view("book-1", bid="99", ask="101", received_ts_ms=1_000)
-    )
+    dispatcher.apply_order_book_view(book_view("book-1", bid="99", ask="101", received_ts_ms=1_000))
     order = world.orders.place(
         instrument_id=INSTRUMENT,
         side=OrderSide.BUY,
@@ -350,9 +348,7 @@ def test_stale_book_rejects_due_market_order() -> None:
     world = World()
     dispatcher = make_dispatcher(world)
     dispatcher.register_environment("env-1")
-    dispatcher.apply_order_book_view(
-        book_view("book-1", bid="99", ask="101", received_ts_ms=1_000)
-    )
+    dispatcher.apply_order_book_view(book_view("book-1", bid="99", ask="101", received_ts_ms=1_000))
     order = world.orders.place(
         instrument_id=INSTRUMENT,
         side=OrderSide.BUY,
@@ -479,3 +475,94 @@ def test_book_arriving_during_run_due_does_not_reject_the_due_order() -> None:
     assert outcome["rejected"] == []
     assert outcome["executed"] == [order.order_id]
     assert world.orders.get(order.order_id).status.value == "FILLED"
+
+
+def test_resynchronized_book_generation_resets_liquidity_for_every_registered_environment() -> None:
+    """A re-snapshot after an order-book resync must not wedge market matching."""
+    from dataclasses import replace
+
+    world = World()
+    dispatcher = make_dispatcher(world)
+    dispatcher.register_environment("env-1")
+    first = book_view("book-1", bid="99", ask="101", received_ts_ms=1_000)
+    dispatcher.apply_order_book_view(first)
+    for generation, ts in ((2, 1_100), (3, 1_200)):
+        resynced = replace(
+            book_view(f"book-{generation}", bid="99", ask="101", received_ts_ms=ts),
+            synchronization_generation=generation,
+        )
+        dispatcher.apply_order_book_view(resynced)
+    assert dispatcher.stats["dispatch_errors"] == 0
+    assert dispatcher.books.latest("okx", INSTRUMENT).synchronization_generation == 3
+
+
+def test_restart_with_lower_book_generation_resets_persisted_liquidity() -> None:
+    """Regression (found by browser E2E): persisted liquidity carries the previous
+    process's synchronization generation. A restarted feed counts generations from 1
+    again, so every book update used to fail until the counter caught up, wedging
+    matching. The first live book per process must replace stale persisted liquidity."""
+    from dataclasses import replace
+
+    world = World()
+    old_process = make_dispatcher(world)
+    old_process.register_environment("env-1")
+    old_process.apply_order_book_view(
+        replace(
+            book_view("old-book", bid="90", ask="95", received_ts_ms=1_000),
+            synchronization_generation=7,
+        )
+    )
+    assert old_process.stats["dispatch_errors"] == 0
+
+    restarted = make_dispatcher(world)  # same persisted world, fresh in-memory state
+    restarted.register_environment("env-1")
+    for name, ts in (("new-book", 2_000), ("new-book-2", 2_100)):
+        restarted.apply_order_book_view(book_view(name, bid="99", ask="101", received_ts_ms=ts))
+
+    assert restarted.stats["dispatch_errors"] == 0
+    assert restarted.stats["books_synchronized"] == 2
+    liquidity = SimulatedLiquidityView("env-1")
+    liquidity.restore_state(world.liquidity["env-1"])
+    assert liquidity.available_book().asks[0].price == Decimal("101")
+
+
+def test_run_due_skips_environments_the_precheck_says_have_nothing_due() -> None:
+    world = World()
+    probes: list[int] = []
+
+    def nothing_due(now_ms: int) -> set[str]:
+        probes.append(now_ms)
+        return set()
+
+    dispatcher = make_dispatcher(world)
+    dispatcher.due_environments = nothing_due
+    dispatcher.register_environment("env-1")
+    opened: list[str] = []
+    real = dispatcher.transaction
+
+    def counting(environment_id: str):
+        opened.append(environment_id)
+        return real(environment_id)
+
+    dispatcher.transaction = counting
+    assert dispatcher.run_due()["executed"] == []
+    assert probes and opened == []  # no locking transaction for an idle environment
+
+
+def test_failed_precheck_falls_back_to_checking_every_environment() -> None:
+    world = World()
+    dispatcher = make_dispatcher(world)
+
+    def broken(_now_ms: int) -> set[str]:
+        raise RuntimeError("probe down")
+
+    dispatcher.due_environments = broken
+    dispatcher.register_environment("env-1")
+    opened: list[str] = []
+    real = dispatcher.transaction
+    dispatcher.transaction = lambda environment_id: (
+        opened.append(environment_id),
+        real(environment_id),
+    )[1]
+    dispatcher.run_due()
+    assert opened == ["env-1"] and dispatcher.stats["dispatch_errors"] == 1

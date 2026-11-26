@@ -123,6 +123,7 @@ class EnvironmentMarketDispatcher:
         now_ms: Callable[[], int],
         max_book_age_ms: int = 5_000,
         max_trade_age_ms: int = 2_000,
+        due_environments: Callable[[int], set[str]] | None = None,
     ) -> None:
 
         self.transaction = transaction
@@ -133,6 +134,9 @@ class EnvironmentMarketDispatcher:
         self.now_ms = now_ms
         self.max_book_age_ms = max_book_age_ms
         self.max_trade_age_ms = max_trade_age_ms
+        # Optional lock-free pre-check so idle ticks do not open a locking transaction per
+        # environment (cost grows linearly with the number of environments otherwise).
+        self.due_environments = due_environments
         if not self.instruments:
             raise ValueError("dispatcher requires at least one instrument")
         if isinstance(market_rules, Mapping):
@@ -151,6 +155,9 @@ class EnvironmentMarketDispatcher:
         self._environments: dict[str, dict[str, Any]] = {}
         # Environments that failed startup recovery: never matched, never silent.
         self._recovery_failed: dict[str, str] = {}
+        # (environment, instrument) pairs whose persisted liquidity was already refreshed
+        # from a live book in THIS process.
+        self._liquidity_refreshed: set[tuple[str, str]] = set()
 
     def environments(self) -> tuple[str, ...]:
         return tuple(self._environments)
@@ -323,7 +330,16 @@ class EnvironmentMarketDispatcher:
         now_ms = self.now_ms()
         executed: list[str] = []
         rejected: list[str] = []
-        for environment_id in self._environments:
+        candidates: Iterable[str] = self._environments
+        if self.due_environments is not None:
+            try:
+                due = self.due_environments(now_ms)
+                candidates = [env for env in self._environments if env in due]
+            except Exception:
+                # Fall back to checking every environment; never skip due work on a probe failure.
+                self.stats["dispatch_errors"] += 1
+                logger.exception("due-environment pre-check failed")
+        for environment_id in candidates:
             try:
                 outcome = self._run_due_for_environment(environment_id, now_ms, books)
                 executed.extend(outcome["executed"])
@@ -346,8 +362,15 @@ class EnvironmentMarketDispatcher:
             if liquidity is None:
                 return
             if executable:
-                self._synchronize_liquidity(liquidity, view)
+                key = (environment_id, view.instrument_id)
+                if key not in self._liquidity_refreshed:
+                    # First live book since this process started: persisted liquidity is from
+                    # an earlier process (older generation numbering, stale residuals).
+                    liquidity.reset_for_resynchronized_book(view, after_process_restart=True)
+                else:
+                    self._synchronize_liquidity(liquidity, view)
                 self.stats["books_synchronized"] += 1
+                self._liquidity_refreshed.add(key)
             store.persist_liquidity(
                 environment_id=environment_id,
                 liquidity=liquidity,
