@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | Pending |
+| 1.12 | React 前端应用 | In Progress（1.12.1 Completed） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -163,11 +163,51 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ### Task 1.12 — React 前端应用
 
-- [ ] 初始化 React、TypeScript、Vite、Tailwind CSS、路由及测试工具。
-- [ ] 使用 Lightweight Charts 实现 Market 行情页面。
-- [ ] 实现模拟交易、账户持仓、订单及成交记录页面。
-- [ ] 展示价格来源、数据时间、费用、滑点及模拟交易声明。
-- [ ] 前端只提交订单意图，不提交或伪造成交价格及成交结果。
+架构设计见 [`11-FRONTEND-DESIGN.md`](11-FRONTEND-DESIGN.md)；依赖分批引入，UI 布局与交互由项目负责人另行确认。
+
+#### Task 1.12.1 — 前端架构设计与接口调查
+
+- [x] 审查 REST Contract（docs/09）与实际接口及数据模型。
+- [x] 审查 WebSocket Contract（docs/10）及消息信封语义。
+- [x] 编写前端架构设计、REST/WS 接口清单与差距分析（G1～G8）。
+- [x] 明确状态同步（stream_id/stream_sequence/delivery_sequence、Resync、状态版本）与 Decimal 字符串处理。
+
+#### Task 1.12.2 — 工程初始化
+
+- [ ] pnpm + Vite + React + TypeScript + Tailwind CSS + shadcn/ui 基座。
+- [ ] React Router 路由骨架与布局占位。
+- [ ] Vitest + React Testing Library 测试工具链；Playwright 独立配置。
+- [ ] 锁定并记录全部依赖版本；保持后端 296 项测试基线不变。
+
+#### Task 1.12.3 — API 与 WebSocket 客户端层
+
+- [ ] Zod 契约 Schema（对应 OpenAPI 与 WS 消息信封）。
+- [ ] REST Client：幂等键生成、错误信封解析、Decimal 字符串。
+- [ ] WS Client：连接状态机、订阅/resume_from 重放、心跳、resync 处理。
+- [ ] 交易状态一致性流程（缓冲 → 快照 → 按 state_version/event_index 应用）。
+
+#### Task 1.12.4 — 布局框架与页面骨架
+
+- [ ] 全局布局、导航与模拟交易声明。
+- [ ] 环境引导（创建/恢复环境与账户）。
+- [ ] 连接状态与数据新鲜度全局展示。
+
+#### Task 1.12.5 — Market 行情页面
+
+- [ ] Lightweight Charts K 线（REST 历史 + WS 实时合并、闭合保护）。
+- [ ] 历史分页与断线缺口补齐。
+- [ ] 行情质量状态展示与下单闸门联动（依赖差距 G1 的后端多周期支持）。
+
+#### Task 1.12.6 — 模拟交易与账户页面
+
+- [ ] 下单意图表单（防重复提交、幂等键、错误展示）。
+- [ ] 订单列表/取消、成交记录、余额与持仓（依赖差距 G2/G3 的后端事件推送）。
+- [ ] 执行延迟与 scheduler lag 展示；价格来源、数据时间、费用声明。
+
+#### Task 1.12.7 — 前端测试与验收准备
+
+- [ ] Vitest/RTL 单测与 Playwright 关键流程（本地真实后端 + 测试库，禁用真实 Feed）。
+- [ ] 无障碍与加载/错误态检查；联调准备清单输出。
 
 ### Task 1.13 — 前后端联调与 Phase 1 验收
 
