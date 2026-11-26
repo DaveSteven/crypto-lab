@@ -48,6 +48,7 @@ const OrderBookView = memo(function OrderBookView() {
   const { instrumentId: INSTRUMENT, base, quote } = useInstrument()
   const book = useMarketStore((state) => state.orderBooks[INSTRUMENT])
   const quality = useMarketStore((state) => state.quality[INSTRUMENT])
+  const hasBook = book !== undefined
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [visibleDepth, setVisibleDepth] = useState(8)
   const qualityOk = (quality?.status ?? 'VALID') === 'VALID'
@@ -64,7 +65,7 @@ const OrderBookView = memo(function OrderBookView() {
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [qualityOk])
+  }, [hasBook, qualityOk])
   if (view === null || (view.asks.length === 0 && view.bids.length === 0)) {
     return <EmptyState message="暂无订单簿数据，等待行情。" />
   }

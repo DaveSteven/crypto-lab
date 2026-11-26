@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { MarketDepthPanel } from './MarketDepthPanel'
 import { MAX_TRADES, useMarketStore } from './marketStore'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
@@ -38,12 +38,44 @@ beforeEach(() => {
   useOrderDraftStore.setState({ pickedPrice: null, pickNonce: 0 })
 })
 
+afterEach(() => vi.unstubAllGlobals())
+
 describe('MarketDepthPanel', () => {
   test('uses the available height for more real levels without exceeding the safety cap', () => {
     expect(calculateVisibleDepth(450)).toBe(10)
     expect(calculateVisibleDepth(720)).toBe(17)
     expect(calculateVisibleDepth(720, true)).toBe(16)
     expect(calculateVisibleDepth(10_000)).toBe(50)
+  })
+
+  test('starts observing when the first order book arrives after the empty state', async () => {
+    let resize: ResizeObserverCallback | undefined
+    const observe = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback
+      }
+      observe = observe
+      disconnect = vi.fn()
+    })
+    render(<MarketDepthPanel />)
+    expect(screen.getByText(/暂无订单簿数据/)).toBeVisible()
+
+    const levels = Array.from({ length: 20 }, (_, index) => ({
+      price: String(100 + index / 10),
+      quantity: '0.1',
+    }))
+    act(() => event('market.order_book', {
+      bids: levels,
+      asks: levels.map((level) => ({ ...level, price: String(Number(level.price) + 10) })),
+      sequence_id: 'late-book',
+      received_ts_ms: 1,
+    }))
+    expect(await screen.findByTestId('order-book')).toBeVisible()
+    expect(observe).toHaveBeenCalledOnce()
+
+    act(() => resize?.([{ contentRect: { height: 450 } } as ResizeObserverEntry], {} as ResizeObserver))
+    expect(screen.getAllByTitle('点击填入限价（不会自动下单）')).toHaveLength(20)
   })
 
   test('shows an honest empty state without data', () => {
