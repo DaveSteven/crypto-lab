@@ -4,7 +4,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.7 |
+| 文档版本 | V0.8 |
 | 当前阶段 | Phase 1 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
@@ -163,7 +163,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ### Task 1.12 — React 前端应用（2026-11-26 重新划分）
 
-权威规范：docs/12-UI-UX-DESIGN.md V1.1（Accepted，含 Desktop Only 修订）；架构：docs/11 V0.2；多周期订阅：ADR 0008（Proposed）。
+权威规范：docs/12-UI-UX-DESIGN.md V1.1（Accepted，含 Desktop Only 修订）；架构：docs/11 V0.3；多周期订阅：ADR 0008（Accepted / Implemented）。
 
 按项目负责人 Instruction 划分为 1.12.1～1.12.12，对应 Gate A～E。**说明**：旧划分下的 1.12.1～1.12.7 工程已提前交付（commits 至 178d8f2），下表状态按新划分如实映射，剩余工作在对应子任务内完成。
 
@@ -273,7 +273,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] E2E 基础：真实后端 + 隔离测试库 + 关闭 Feed（引导/下单意图/订单表/账户/会话恢复 2 项通过）；运行须剥离系统代理（docs/11 §9）。
 - [x] 完整 E2E（确认流程、成交与余额变化、行情失效禁用与恢复、布局持久化、环境切换隔离）：13 项，连续 4 轮全部通过；使用 SYNTHETIC 脚本化行情的测试专用后端 `tests/support/e2e_server.py`（拒绝非 test 库）。
 - [x] Desktop Acceptance Matrix（1280×720 / 1440×900 / 1920×1080 / 2560×1440，含按钮可点击命中测试与截图）、可访问性自动检查、性能检查（Long Task 0、堆增长 < 1.2 MB）。**未做**：Safari/Firefox/Edge、颜色对比度、读屏、真实高频行情下的前端性能。
-- [x] Task 1.12 验收报告：docs/13-FRONTEND-ACCEPTANCE-REPORT.md（待项目负责人验收；含未解决问题 6：订单簿事件随环境数线性放大，需决策）。不自动进入 Task 1.13。
+- [x] Task 1.12 验收报告：docs/13-FRONTEND-ACCEPTANCE-REPORT.md（待项目负责人验收）。订单簿事件随环境数线性放大已确认为 Phase 1 Known Limitation / Technical Debt，不阻塞 Task 1.12；按 Task 1.13 独立性能基线复测。不自动进入 Task 1.13。
 
 
 ### Task 1.13 — 前后端联调与 Phase 1 验收
@@ -283,6 +283,10 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [ ] 验证刷新、重连、错误响应、过期行情及恢复场景。
 - [ ] 确认系统不调用真实交易接口。
 - [ ] 本地 Docker Compose 部署（ADR 0009，Accepted）：Frontend（React Build + Nginx，`127.0.0.1:8080`）/ Backend（单进程单 Worker）/ PostgreSQL 三容器；Nginx 代理 REST + WebSocket（升级与长连接）；Backend 监听地址可配置且不对宿主机暴露；Alembic Migration 先于业务服务且失败则不启动；Health/Readiness；优雅关闭 Feed、Scheduler、WebSocket；Named Volume + `pg_dump` 备份与恢复演练；Development / Local Production / Test 三库隔离及测试防护；`.env.example`；ARM64 Multi-stage 镜像；容器重启/重建数据保留与重启恢复规则验证。
+- [ ] 使用确定性行情样本分别测试 1、3、5、10、20 个活跃模拟环境。
+- [ ] 记录 CPU Usage、Memory Usage、Order Book Processing Time、Event Queue Backlog、Scheduler Lag、Database Transaction Time 和 Event Processing Throughput。
+- [ ] 对各环境规模比较模拟成交、余额、持仓、流动性消耗历史及事件顺序，确认相同输入产生一致业务结果。
+- [ ] 根据实测数据决定是否启动专项性能优化；本阶段不设置未经测量的硬指标，不引入复杂并行架构。
 
 ## 3. Task 1.1 验收标准
 
@@ -296,7 +300,13 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 Task 1.5～1.8 的详细设计、测试矩阵及验收标准见 [`07-EXECUTION-ENGINE-DESIGN.md`](07-EXECUTION-ENGINE-DESIGN.md)。
 
-Task 1.10 的 REST Contract 见 [`09-REST-API-DESIGN.md`](09-REST-API-DESIGN.md)；Task 1.11 的 Proposed WebSocket Contract 见 [`10-REALTIME-SERVICE-DESIGN.md`](10-REALTIME-SERVICE-DESIGN.md)，须经负责人确认后实施。
+Task 1.10 的 REST Contract 见 [`09-REST-API-DESIGN.md`](09-REST-API-DESIGN.md)；Task 1.11 已按 Accepted ADR 0006/0007 完成，最终 WebSocket Contract、验收结果及已知限制见 [`10-REALTIME-SERVICE-DESIGN.md`](10-REALTIME-SERVICE-DESIGN.md)。
+
+### Phase 1 性能决策（2026-11-26）
+
+Phase 1 接受订单簿处理成本随活跃模拟环境数量线性增长。优先级依次为金融计算正确性、模拟流动性准确性、环境隔离、事件处理确定性、事务一致性和性能优化。该限制记录为 Known Limitation / Technical Debt，在个人使用规模下不阻塞正常验收。
+
+允许共享不可变 Canonical 行情对象、减少复制及重复序列化、优化数据结构/查询索引/非关键日志、增加性能监控，以及对前端推送节流合并，但必须保持业务结果一致并通过完整回归。未经负责人确认，不得跳过无挂单环境更新、合并或丢弃交易引擎输入、改变流动性补充与消耗历史、跨环境共享已消耗流动性、改变撮合顺序、TRADE_THROUGH、执行延迟或引入惰性流动性同步。无当前挂单不代表该环境的路径依赖流动性状态可以忽略。
 
 ## 4. 开发原则
 

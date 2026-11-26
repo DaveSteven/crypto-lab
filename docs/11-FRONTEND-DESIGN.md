@@ -13,7 +13,7 @@
 修订记录：
 
 - V0.1（2026-11-26）：初始架构与接口调查（Task 1.12.1 旧划分）。
-- V0.2（2026-11-26）：按已确认 UI/UX 规范 V1.1 与 Task 1.12 新划分全面修订——Desktop Only、Feature-based Architecture、API Capability Matrix、现状对照与剩余差距（含 ADR 0008 Proposed）。
+- V0.2（2026-11-26）：按已确认 UI/UX 规范 V1.1 与 Task 1.12 新划分全面修订——Desktop Only、Feature-based Architecture、API Capability Matrix、现状对照与剩余差距（当时 ADR 0008 尚为 Proposed；现已 Accepted / Implemented）。
 - V0.3（2026-11-26）：Gate A 验收通过，记录四项已确认架构决策（§7 决策列、§11）。
 
 ## 1. 目标与边界
