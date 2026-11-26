@@ -62,6 +62,7 @@ Repository / Projection Read Model
 | Method | Path | 用途 |
 |---|---|---|
 | POST | `/api/v1/environments` | 创建独立模拟环境 |
+| GET | `/api/v1/environments?limit=` | 列出已有模拟环境（最新在前，默认 50、最大 200；只读，Task 1.12.11） |
 | GET | `/api/v1/environments/{environment_id}` | 查询环境状态 |
 
 创建请求只包含 `name` 和可选客户端业务 ID；ID Namespace 由服务端确定。Phase 1 不提供删除环境接口。

@@ -114,6 +114,15 @@ class ApplicationService:
             )
             return 201, response
 
+    def list_environments(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Existing simulation environments, newest first (read-only listing)."""
+        return self._many(
+            select(schema.simulation_environments)
+            .order_by(schema.simulation_environments.c.created_ts_ms.desc(),
+                      schema.simulation_environments.c.environment_id)
+            .limit(limit)
+        )
+
     def list_environment_ids(self) -> list[str]:
         """All persisted environment ids, oldest first (used to restore dispatch after restart)."""
         with self.engine.connect() as connection:

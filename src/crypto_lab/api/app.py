@@ -287,6 +287,12 @@ def create_app(
                     )
         return JSONResponse(result, status_code=status)
 
+    @app.get("/api/v1/environments")
+    def list_environments(
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ) -> dict[str, Any]:
+        return {"items": service.list_environments(limit)}
+
     @app.get("/api/v1/environments/{environment_id}")
     def get_environment(environment_id: str) -> dict[str, Any]:
         return service.get_environment(environment_id)
