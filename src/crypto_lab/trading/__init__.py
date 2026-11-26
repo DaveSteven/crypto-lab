@@ -56,6 +56,7 @@ from crypto_lab.trading.portfolio import (
     PortfolioEngine,
     Position,
     PositionValuation,
+    realized_pnl_summary,
 )
 from crypto_lab.trading.scheduler import ExecutionScheduler, ScheduledExecution, SchedulerRunResult
 from crypto_lab.trading.trade_through import (
@@ -107,6 +108,7 @@ __all__ = [
     "PaperAccount",
     "PaperOrder",
     "PortfolioEngine",
+    "realized_pnl_summary",
     "Position",
     "PositionValuation",
     "RandomIdGenerator",

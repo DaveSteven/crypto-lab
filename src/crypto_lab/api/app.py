@@ -283,6 +283,10 @@ def create_app(
     def balances(environment_id: str, account_id: str) -> dict[str, Any]:
         return {"items": service.balances(environment_id, account_id)}
 
+    @app.get("/api/v1/environments/{environment_id}/accounts/{account_id}/pnl")
+    def pnl_summary(environment_id: str, account_id: str) -> dict[str, Any]:
+        return service.pnl_summary(environment_id, account_id)
+
     @app.get("/api/v1/environments/{environment_id}/accounts/{account_id}/positions")
     def positions(environment_id: str, account_id: str) -> dict[str, Any]:
         return {"items": service.positions(environment_id, account_id)}

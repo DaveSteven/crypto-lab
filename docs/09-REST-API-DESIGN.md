@@ -75,8 +75,30 @@ Repository / Projection Read Model
 | GET | `/api/v1/environments/{environment_id}/accounts/{account_id}` | 账户详情 |
 | GET | `/api/v1/environments/{environment_id}/accounts/{account_id}/balances` | 可用/冻结余额 |
 | GET | `/api/v1/environments/{environment_id}/accounts/{account_id}/positions` | 持仓与成本投影 |
+| GET | `/api/v1/environments/{environment_id}/accounts/{account_id}/pnl` | 账户累计已实现盈亏与手续费（按结算币种） |
 
 初始资金仅为模拟资产。请求必须明确交易所、资产和 Decimal 字符串金额。
+
+#### 4.3.1 账户累计盈亏 `/pnl`（Task 1.12.10-A）
+
+**权威来源与方案**：以账户完整 Fill History 为唯一权威，在读取时用既有 Portfolio Projection Engine（移动平均成本法、买入手续费计入持仓成本、卖出手续费冲减已实现盈亏、每笔手续费只计一次）重放得到；**不新增持久化表，不建立第二套盈亏权威数据**。完全平仓后持仓行会从 `positions` 投影消失，但其盈亏仍由重放保留。历史已存在账户无需迁移，读取即得；复杂度 O(成交数)，Phase 1 规模可接受，数据规模验收后若需要再引入可重建缓存。
+
+响应字段：
+
+| 字段 | 说明 |
+|---|---|
+| `environment_id` / `account_id` | 严格按环境与账户隔离；未知账户 404 |
+| `state_version` | 与同一读取视图中的订单、成交、余额、持仓一致（`REPEATABLE READ`） |
+| `as_of_ts_ms` | 服务端读取时间 |
+| `scope` | 固定 `ACCOUNT_LIFETIME_FILL_HISTORY` |
+| `cost_method` | 固定 `MOVING_AVERAGE` |
+| `status` | `AVAILABLE` 或 `UNAVAILABLE` |
+| `cumulative_realized_pnl_by_currency` | `{币种: Decimal 字符串}`；仅在同一结算币种内求和，币种之间绝不相加 |
+| `cumulative_fees_by_currency` | 同上（Portfolio 当前仅支持以计价币种计手续费） |
+| `instruments` | 各品种数量、已实现盈亏、累计手续费（含已平仓品种） |
+| `reason` | 仅 `UNAVAILABLE` 时出现 |
+
+没有任何成交的账户返回 `AVAILABLE` 与**空对象**（合法的零盈亏）；成交历史无法重放时返回 `status=UNAVAILABLE` 与原因，不返回 0 掩盖异常。聚合 Snapshot 新增同结构的 `pnl` 字段，与其余数据同一 `state_version`，Snapshot 不因 PnL 不可用而失败。
 
 ### 4.4 Orders
 
@@ -191,4 +213,4 @@ Execution 只读，不提供创建、修改或删除接口。
 - 完整回归结果：230 passed；无外部交易所网络调用。
 
 当前限制：Phase 1 仍无认证，必须只绑定本机；默认手续费配置为明确版本化的模拟配置，并非交易所实时费率；订单到期执行和实时推送分别由串行事件入口及 Task 1.11 承担；列表已限制最大 200 项，游标分页留待数据规模验收后补充。
-
+- Task 1.12.10-A：新增 `/pnl` 与 Snapshot `pnl`（见 4.3.1）；Snapshot 读取改用 `REPEATABLE READ`；PostgreSQL 回归 7 项 + 单元 12 项。

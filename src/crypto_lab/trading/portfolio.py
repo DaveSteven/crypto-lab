@@ -173,3 +173,41 @@ class PortfolioEngine:
             unrealized_pnl=unrealized_pnl,
             total_pnl=position.realized_pnl + unrealized_pnl,
         )
+
+
+def realized_pnl_summary(
+    executions: tuple[ExecutionRecord, ...], account_id: str
+) -> dict[str, object]:
+    """Cumulative realized PnL rebuilt from the account's full Fill History.
+
+    Derived, never persisted: it replays the same moving-average-cost engine that
+    backs the positions projection, so fully closed positions (which leave the
+    projection) still contribute and no second authority for PnL exists. Amounts
+    are summed only within one settlement currency; different currencies are never
+    added together. Fees follow the engine's existing semantics (buy fees are part
+    of cost basis, sell fees reduce realized PnL, each fill's fee counted once).
+    """
+    portfolio = PortfolioEngine(tuple(e for e in executions if e.account_id == account_id))
+    instruments = [
+        {
+            "instrument_id": position.instrument_id,
+            "base_asset": position.base_asset,
+            "quote_asset": position.quote_asset,
+            "quantity": position.quantity,
+            "realized_pnl": position.realized_pnl,
+            "cumulative_fees": position.cumulative_fees,
+        }
+        for position in portfolio.positions()
+    ]
+    realized: dict[str, Decimal] = {}
+    fees: dict[str, Decimal] = {}
+    for item in instruments:
+        currency = str(item["quote_asset"])
+        realized[currency] = realized.get(currency, Decimal(0)) + item["realized_pnl"]  # type: ignore[operator]
+        fees[currency] = fees.get(currency, Decimal(0)) + item["cumulative_fees"]  # type: ignore[operator]
+    return {
+        "account_id": account_id,
+        "cumulative_realized_pnl_by_currency": dict(sorted(realized.items())),
+        "cumulative_fees_by_currency": dict(sorted(fees.items())),
+        "instruments": instruments,
+    }

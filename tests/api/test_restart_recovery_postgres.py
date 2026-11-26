@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 from decimal import Decimal
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 
 from crypto_lab.api.app import create_app
 from crypto_lab.api.market_feed import MarketFeedSettings
@@ -44,14 +42,6 @@ FEES = FeeSchedule(
 )
 
 
-class Clock:
-    def __init__(self, now: int = 1_000) -> None:
-        self.now = now
-
-    def __call__(self) -> int:
-        return self.now
-
-
 class IdleFeed:
     """Stands in for the exchange feed: no network, runs until stopped."""
 
@@ -66,28 +56,10 @@ class IdleFeed:
         self._stop = True
 
 
-@pytest.fixture
-def engine():
-    url = os.getenv("CRYPTO_LAB_TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("CRYPTO_LAB_TEST_DATABASE_URL is not configured")
-    engine = create_engine(url)
-    with engine.begin() as connection:
-        for table in reversed(schema.metadata.sorted_tables):
-            connection.execute(table.delete())
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture
-def clock() -> Clock:
-    return Clock()
-
-
 class World:
     """Pre-restart state written through the real service (the 'old process')."""
 
-    def __init__(self, engine, clock: Clock) -> None:
+    def __init__(self, engine, clock) -> None:
         self.engine = engine
         self.clock = clock
         self.service = ApplicationService(engine, fee_schedule=FEES, now_ms=clock)
@@ -146,7 +118,7 @@ class World:
         return response
 
 
-def start_app(engine, clock: Clock, *, before_start=None):
+def start_app(engine, clock, *, before_start=None):
     app = create_app(
         engine=engine,
         market_feed=IdleFeed(),

@@ -20,6 +20,7 @@ from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
 from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.models import ExchangeId
 from crypto_lab.persistence import PostgresUnitOfWork, schema
+from crypto_lab.persistence.store import PostgresStore
 from crypto_lab.realtime import RealtimeEvent, RealtimePublisher
 from crypto_lab.trading import (
     ExecutionLatency,
@@ -32,7 +33,7 @@ from crypto_lab.trading import (
     create_paper_account,
 )
 from crypto_lab.trading.models import utc_now_ms
-
+from crypto_lab.trading.portfolio import realized_pnl_summary
 
 logger = logging.getLogger(__name__)
 
@@ -454,8 +455,62 @@ class ApplicationService:
             "execution was not found",
         )
 
+    def pnl_summary(self, environment_id: str, account_id: str) -> dict[str, Any]:
+        """Account lifetime realized PnL / fees, rebuilt from the full Fill History."""
+        with self.uow.session_factory.begin() as session:
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            self._require_account(session, environment_id, account_id)
+            return self._pnl_view(session, environment_id, account_id)
+
+    def _require_account(self, session: Any, environment_id: str, account_id: str) -> Any:
+        environment = session.execute(
+            select(schema.simulation_environments).where(
+                schema.simulation_environments.c.environment_id == environment_id
+            )
+        ).mappings().one_or_none()
+        if environment is None:
+            raise ApplicationError(
+                "ENVIRONMENT_NOT_FOUND", "simulation environment was not found", status_code=404
+            )
+        account = session.execute(
+            select(schema.paper_accounts).where(
+                schema.paper_accounts.c.environment_id == environment_id,
+                schema.paper_accounts.c.account_id == account_id,
+            )
+        ).mappings().one_or_none()
+        if account is None:
+            raise ApplicationError(
+                "ACCOUNT_NOT_FOUND", "paper account was not found", status_code=404
+            )
+        return environment
+
+    def _pnl_view(self, session: Any, environment_id: str, account_id: str) -> dict[str, Any]:
+        environment = session.execute(
+            select(schema.simulation_environments).where(
+                schema.simulation_environments.c.environment_id == environment_id
+            )
+        ).mappings().one()
+        base: dict[str, Any] = {
+            "environment_id": environment_id,
+            "account_id": account_id,
+            "state_version": int(environment["state_version"]),
+            "as_of_ts_ms": int(self.now_ms()),
+            "scope": "ACCOUNT_LIFETIME_FILL_HISTORY",
+            "cost_method": "MOVING_AVERAGE",
+        }
+        try:
+            executions = PostgresStore(session).restore_executions(environment_id)
+            summary = realized_pnl_summary(executions, account_id)
+        except Exception as exc:  # unavailable is explicit, never masked as zero
+            logger.exception("realized PnL rebuild failed for %s/%s", environment_id, account_id)
+            return {**base, "status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"}
+        return _json_value({**base, "status": "AVAILABLE", **summary})
+
     def snapshot(self, environment_id: str, account_id: str) -> dict[str, Any]:
         with self.uow.session_factory.begin() as session:
+            # One consistent read view: orders, fills, balances, positions and PnL
+            # all belong to the same state_version.
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
             environment = session.execute(
                 select(schema.simulation_environments).where(
                     schema.simulation_environments.c.environment_id == environment_id
@@ -508,6 +563,7 @@ class ApplicationService:
                     schema.positions.c.account_id == account_id,
                     schema.positions.c.instrument_id,
                 ),
+                "pnl": self._pnl_view(session, environment_id, account_id),
             }
 
     def candle_history(
