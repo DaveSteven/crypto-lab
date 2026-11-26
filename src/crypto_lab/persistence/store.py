@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -72,6 +72,116 @@ class PostgresStore:
         ).scalar_one_or_none()
         if row is None:
             raise PersistenceError(f"unknown simulation environment: {environment_id}")
+
+    def enqueue_event(
+        self,
+        *,
+        environment_id: str,
+        event_id: str,
+        event_kind: str,
+        event_ts_ms: int,
+        payload: dict[str, object],
+    ) -> int:
+        existing = (
+            self.session.execute(
+                select(schema.simulation_events).where(
+                    schema.simulation_events.c.event_id == event_id
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if existing is not None:
+            if existing["environment_id"] != environment_id:
+                raise PersistenceError("event ID belongs to another environment")
+            return int(existing["arrival_sequence"])
+        sequence = self.session.execute(
+            select(schema.simulation_environments.c.next_arrival_sequence).where(
+                schema.simulation_environments.c.environment_id == environment_id
+            )
+        ).scalar_one()
+        self.session.execute(
+            insert(schema.simulation_events).values(
+                event_id=event_id,
+                environment_id=environment_id,
+                event_kind=event_kind,
+                event_ts_ms=event_ts_ms,
+                arrival_sequence=sequence,
+                payload_json=payload,
+                status="PENDING",
+            )
+        )
+        self.session.execute(
+            update(schema.simulation_environments)
+            .where(schema.simulation_environments.c.environment_id == environment_id)
+            .values(next_arrival_sequence=sequence + 1, updated_ts_ms=event_ts_ms)
+        )
+        return int(sequence)
+
+    def pending_events(self, environment_id: str) -> tuple[dict[str, object], ...]:
+        rows = self.session.execute(
+            select(schema.simulation_events)
+            .where(
+                schema.simulation_events.c.environment_id == environment_id,
+                schema.simulation_events.c.status == "PENDING",
+            )
+            .order_by(
+                schema.simulation_events.c.event_ts_ms,
+                schema.simulation_events.c.arrival_sequence,
+            )
+        ).mappings()
+        return tuple(dict(row) for row in rows)
+
+    def complete_event(
+        self,
+        *,
+        event_id: str,
+        result: dict[str, object],
+        processed_ts_ms: int,
+    ) -> None:
+        changed = self.session.execute(
+            update(schema.simulation_events)
+            .where(
+                schema.simulation_events.c.event_id == event_id,
+                schema.simulation_events.c.status == "PENDING",
+            )
+            .values(status="PROCESSED", result_json=result)
+        ).rowcount
+        if changed != 1:
+            raise PersistenceError("event is missing or already completed")
+        environment_id = self.session.execute(
+            select(schema.simulation_events.c.environment_id).where(
+                schema.simulation_events.c.event_id == event_id
+            )
+        ).scalar_one()
+        self.session.execute(
+            update(schema.simulation_environments)
+            .where(schema.simulation_environments.c.environment_id == environment_id)
+            .values(last_event_ts_ms=processed_ts_ms, updated_ts_ms=processed_ts_ms)
+        )
+
+    def record_processed_market_event(
+        self,
+        *,
+        environment_id: str,
+        source_event_key: str,
+        event_type: str,
+        processed_ts_ms: int,
+        result: dict[str, object],
+    ) -> bool:
+        inserted = self.session.execute(
+            insert(schema.processed_market_events)
+            .values(
+                environment_id=environment_id,
+                source_event_key=source_event_key,
+                event_type=event_type,
+                processed_ts_ms=processed_ts_ms,
+                result_json=result,
+            )
+            .on_conflict_do_nothing(index_elements=["environment_id", "source_event_key"])
+            .returning(schema.processed_market_events.c.source_event_key)
+        ).scalar_one_or_none()
+        return inserted is not None
 
     def persist_trading_state(
         self,

@@ -262,3 +262,67 @@ def test_pending_scheduler_id_state_and_liquidity_restore(engine) -> None:
     assert restored_ids.next_id("order") == expected_next_order_id
     assert restored_scheduler.snapshot_state() == scheduler.snapshot_state()
     assert restored_liquidity.snapshot_state() == liquidity.snapshot_state()
+
+
+def test_typed_events_recover_in_order_and_complete_idempotently(engine) -> None:
+    uow = PostgresUnitOfWork(engine)
+    with uow.bootstrap() as store:
+        store.create_environment(
+            environment_id="environment-events",
+            name="Event Test",
+            id_namespace="event-test",
+            created_ts_ms=900,
+        )
+    with uow.transaction("environment-events") as store:
+        second_sequence = store.enqueue_event(
+            environment_id="environment-events",
+            event_id="event-2",
+            event_kind="SCHEDULED_EXECUTION",
+            event_ts_ms=1_100,
+            payload={"order_id": "order-1"},
+        )
+        first_sequence = store.enqueue_event(
+            environment_id="environment-events",
+            event_id="event-1",
+            event_kind="MARKET_DATA",
+            event_ts_ms=1_000,
+            payload={"market_event_id": "book-1"},
+        )
+        duplicate_sequence = store.enqueue_event(
+            environment_id="environment-events",
+            event_id="event-1",
+            event_kind="MARKET_DATA",
+            event_ts_ms=1_000,
+            payload={"market_event_id": "book-1"},
+        )
+
+    assert (first_sequence, second_sequence, duplicate_sequence) == (2, 1, 2)
+    with uow.transaction("environment-events") as store:
+        pending = store.pending_events("environment-events")
+        store.complete_event(event_id="event-1", result={"accepted": True}, processed_ts_ms=1_000)
+        assert store.record_processed_market_event(
+            environment_id="environment-events",
+            source_event_key="okx:BTC-USDT:trade:1",
+            event_type="TRADE",
+            processed_ts_ms=1_000,
+            result={"fills": 1},
+        )
+        assert not store.record_processed_market_event(
+            environment_id="environment-events",
+            source_event_key="okx:BTC-USDT:trade:1",
+            event_type="TRADE",
+            processed_ts_ms=1_000,
+            result={"fills": 1},
+        )
+
+    assert [row["event_id"] for row in pending] == ["event-1", "event-2"]
+    with uow.transaction("environment-events") as store:
+        assert [row["event_id"] for row in store.pending_events("environment-events")] == [
+            "event-2"
+        ]
+        with pytest.raises(PersistenceError, match="already completed"):
+            store.complete_event(
+                event_id="event-1",
+                result={"accepted": True},
+                processed_ts_ms=1_001,
+            )
