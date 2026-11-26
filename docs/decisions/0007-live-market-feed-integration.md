@@ -31,8 +31,8 @@ Task 1.11 需要向本地 React 客户端推送真实 Canonical 行情，并要�
 - **分发**：`EnvironmentMarketDispatcher` 对每个注册环境在独立数据库事务中应用事件：Trade → `TradeThroughEngine` 被动撮合；订单簿 → 共享 `LatestBookState` 门 + 各环境 `SimulatedLiquidityView` 同步；到期订单 → 现有 `ExecutionScheduler` + `ScheduledOrderExecutor`。每笔 Trade 以 `processed_market_events` 去重并保存保守排序键，重启后恢复顺序状态。
 - **隔离**：仅 Canonical 行情数据共享；订单、资金、持仓、模拟流动性、调度器完全按环境隔离。
 - **失效处理**：订单簿过期或失效时，到期订单按既有语义以 `MARKET_DATA_UNAVAILABLE` 拒绝（Task 1.7 保守模型），旧订单簿不会恢复为有效状态；重连后必须重新快照同步。
-- **配置**：`CRYPTO_LAB_FEED_ENABLED`（默认 true）、`CRYPTO_LAB_FEED_INSTRUMENTS`（默认 BTC/USDT）、`CRYPTO_LAB_FEED_EXCHANGE`（默认 okx）、`CRYPTO_LAB_FEED_RECONNECT_ENABLED`（默认 true）、`CRYPTO_LAB_FEED_CANDLE_INTERVAL`、`CRYPTO_LAB_FEED_DISPATCH_INTERVAL_MS`、`CRYPTO_LAB_FEED_MAX_BOOK_AGE_MS`。自动化测试必须显式禁用 Feed 或注入可控连接工厂。
-- **Market Rules**：Phase 1 使用 `OKX:DOCUMENTED:SPOT:V1` 静态规则（Documented，非每次运行 Verified）；接入更多品种前应从 OKX instruments 端点刷新。
+- **配置**：`CRYPTO_LAB_FEED_ENABLED`（默认 true）、`CRYPTO_LAB_FEED_INSTRUMENTS`（默认 BTC/USDT 与 ETH/USDT；2026-11-26 Task 1.12.10-A 由仅 BTC/USDT 调整）、`CRYPTO_LAB_FEED_EXCHANGE`（默认 okx）、`CRYPTO_LAB_FEED_RECONNECT_ENABLED`（默认 true）、`CRYPTO_LAB_FEED_CANDLE_INTERVAL`、`CRYPTO_LAB_FEED_DISPATCH_INTERVAL_MS`、`CRYPTO_LAB_FEED_MAX_BOOK_AGE_MS`。自动化测试必须显式禁用 Feed 或注入可控连接工厂。
+- **Market Rules**：改为按品种的 `OKX_SPOT_RULES`（BTC/USDT：tick 0.1 / lot 0.00000001 / min 0.00001；ETH/USDT：tick 0.01 / lot 0.000001 / min 0.0001），均于 2026-11-26 对照 OKX 公共 instruments 端点 **Verified**；规则不得跨品种共用，Feed 品种缺少已验证规则时应用拒绝启动。原单一 `OKX:DOCUMENTED:SPOT:V1` 规则仅适用于 BTC/USDT。
 
 ## 被否决的方案
 
@@ -54,3 +54,7 @@ Task 1.11 需要向本地 React 客户端推送真实 Canonical 行情，并要�
 - 调度驱动间隔默认 200ms，市价单实际执行时间存在该量级的 scheduler lag；订单已持久化区分 `configured_latency_ms` 与 `scheduler_lag_ms`（见 docs/10 §13.2）。高精度事件驱动调度器留待后续评估。
 - WebSocket Feed 每进程只推送一个配置的 K 线周期；多周期推送待 Task 1.12 按前端需要评估。
 - Dispatcher 端到端持久化测试需要 `CRYPTO_LAB_TEST_DATABASE_URL`（独立测试容器），未配置时跳过。
+
+## 修订记录（2026-11-26，Task 1.12.10-A）
+
+- 估值审计发现：默认 Feed 仅 BTC/USDT（本 ADR 原决定），ETH/USDT 从未接入，因此 Overview 无法估值 ETH；前端 Gateway 另外硬编码仅订阅 BTC/USDT。已将默认品种扩展为 BTC/USDT、ETH/USDT，规则按品种校验，并新增 `GET /api/v1/market/instruments` 列出实际接入品种供前端订阅。

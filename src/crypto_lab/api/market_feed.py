@@ -17,24 +17,39 @@ from crypto_lab.realtime.market import MarketRealtimeBridge
 from crypto_lab.trading.constraints import MarketRules
 
 DEFAULT_INSTRUMENT = "BTC/USDT"
+DEFAULT_INSTRUMENT_SYMBOLS = (DEFAULT_INSTRUMENT, "ETH/USDT")
 
-# OKX BTC-USDT SPOT rules documented in the official instruments endpoint
-# research (docs/03-EXCHANGE-API-RESEARCH.md). Status: Documented, not
-# Verified per run; refresh from OKX public instruments before production use.
-DOCUMENTED_OKX_SPOT_RULES = MarketRules(
-    rules_id="OKX:DOCUMENTED:SPOT:V1",
-    price_increment="0.1",
-    quantity_increment="0.00000001",
-    min_quantity="0.00001",
-    min_notional=None,
-)
+# OKX SPOT rules per instrument. Status: Verified against the OKX public
+# instruments endpoint (GET /api/v5/public/instruments?instType=SPOT) on
+# 2026-11-26; refresh before adding further instruments. Rules must never be
+# shared across instruments: ETH-USDT uses different tick/lot/min sizes.
+OKX_SPOT_RULES: dict[str, MarketRules] = {
+    "okx:SPOT:BTC/USDT": MarketRules(
+        rules_id="OKX:VERIFIED_20261126:SPOT:BTC-USDT",
+        price_increment="0.1",
+        quantity_increment="0.00000001",
+        min_quantity="0.00001",
+        min_notional=None,
+    ),
+    "okx:SPOT:ETH/USDT": MarketRules(
+        rules_id="OKX:VERIFIED_20261126:SPOT:ETH-USDT",
+        price_increment="0.01",
+        quantity_increment="0.000001",
+        min_quantity="0.0001",
+        min_notional=None,
+    ),
+}
+# Backwards-compatible alias for the BTC rule set.
+DOCUMENTED_OKX_SPOT_RULES = OKX_SPOT_RULES["okx:SPOT:BTC/USDT"]
+
+DEFAULT_INSTRUMENTS = tuple(f"okx:SPOT:{symbol}" for symbol in DEFAULT_INSTRUMENT_SYMBOLS)
 
 
 @dataclass(frozen=True)
 class MarketFeedSettings:
     enabled: bool = True
     exchange: str = "okx"
-    instruments: tuple[str, ...] = (f"okx:SPOT:{DEFAULT_INSTRUMENT}",)
+    instruments: tuple[str, ...] = DEFAULT_INSTRUMENTS
     reconnect_enabled: bool = True
     candle_interval: str = "1m"
     candle_intervals: tuple[str, ...] = ("1m",)
@@ -56,7 +71,7 @@ class MarketFeedSettings:
         enabled = flag("CRYPTO_LAB_FEED_ENABLED", True)
         exchange = (values.get("CRYPTO_LAB_FEED_EXCHANGE") or "okx").strip().lower()
         raw_instruments = (
-            values.get("CRYPTO_LAB_FEED_INSTRUMENTS") or DEFAULT_INSTRUMENT
+            values.get("CRYPTO_LAB_FEED_INSTRUMENTS") or ",".join(DEFAULT_INSTRUMENT_SYMBOLS)
         ).strip()
         instruments = tuple(
             _canonical_instrument(exchange, item)
@@ -64,7 +79,7 @@ class MarketFeedSettings:
             if item.strip()
         )
         if not instruments:
-            instruments = (f"okx:SPOT:{DEFAULT_INSTRUMENT}",)
+            instruments = DEFAULT_INSTRUMENTS
         candle_interval = (values.get("CRYPTO_LAB_FEED_CANDLE_INTERVAL") or "1m").strip()
         raw_intervals = values.get("CRYPTO_LAB_FEED_CANDLE_INTERVALS")
         if raw_intervals is None or not raw_intervals.strip():

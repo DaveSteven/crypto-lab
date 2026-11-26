@@ -23,7 +23,7 @@ Design constraints carried over from Tasks 1.5-1.9:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
@@ -112,7 +112,7 @@ class EnvironmentMarketDispatcher:
         transaction: Callable[[str], AbstractContextManager[Any]],
         environment_exists: Callable[[str], bool],
         fee_schedule: FeeSchedule,
-        market_rules: MarketRules,
+        market_rules: MarketRules | Mapping[str, MarketRules],
         instruments: Iterable[str],
         now_ms: Callable[[], int],
         max_book_age_ms: int = 5_000,
@@ -129,6 +129,10 @@ class EnvironmentMarketDispatcher:
         self.max_trade_age_ms = max_trade_age_ms
         if not self.instruments:
             raise ValueError("dispatcher requires at least one instrument")
+        if isinstance(market_rules, Mapping):
+            missing = [i for i in self.instruments if i not in market_rules]
+            if missing:
+                raise ValueError(f"market rules are missing for instruments: {missing}")
         self.books = LatestBookState()
         self.stats = {
             "trades_processed": 0,
@@ -556,11 +560,17 @@ class EnvironmentMarketDispatcher:
             exchange_id=ExchangeId.OKX,
             max_book_age_ms=self.max_book_age_ms,
             fee_schedule=self.fee_schedule,
-            market_rules=self.market_rules,
+            market_rules=self._rules_for(order.instrument_id),
             consumption_id=f"dispatch:{environment_id}:{order.order_id}:{execution_ts_ms}",
         )
         executor(order, execution_ts_ms)
         return executor.outcome(order.order_id).outcome
+
+    def _rules_for(self, instrument_id: str) -> MarketRules:
+        """Per-instrument tick/lot/min rules; a shared rule set is only for single-rule setups."""
+        if isinstance(self.market_rules, Mapping):
+            return self.market_rules[instrument_id]
+        return self.market_rules
 
     def _pending_schedule_groups(
         self, store: Any, environment_id: str

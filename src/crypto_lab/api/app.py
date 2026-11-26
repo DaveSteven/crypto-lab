@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine
 
 from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.market_feed import (
-    DOCUMENTED_OKX_SPOT_RULES,
+    OKX_SPOT_RULES,
     MarketFeedSettings,
     build_market_feed,
 )
@@ -58,6 +58,16 @@ def _environment_exists(service: Any) -> Any:
         return True
 
     return exists
+
+
+def _rules_for_instruments(instruments: Any) -> dict[str, Any]:
+    missing = [item for item in instruments if item not in OKX_SPOT_RULES]
+    if missing:
+        raise RuntimeError(
+            f"no verified market rules for feed instruments {missing}; "
+            "add them to OKX_SPOT_RULES after checking the OKX instruments endpoint"
+        )
+    return {item: OKX_SPOT_RULES[item] for item in instruments}
 
 
 def recover_environments(dispatcher: Any, service: Any, recovery_ts_ms: int) -> list[Any]:
@@ -124,7 +134,7 @@ def create_app(
                 transaction=service.uow.transaction,
                 environment_exists=_environment_exists(service),
                 fee_schedule=fee_schedule,
-                market_rules=DOCUMENTED_OKX_SPOT_RULES,
+                market_rules=_rules_for_instruments(feed_settings.instruments),
                 instruments=feed_settings.instruments,
                 now_ms=service.now_ms,
                 max_book_age_ms=feed_settings.max_book_age_ms,
@@ -227,6 +237,25 @@ def create_app(
     @app.get("/health/live")
     def live() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/v1/market/instruments")
+    def market_instruments() -> dict[str, Any]:
+        """Instruments actually connected to the shared market feed (never a guess)."""
+        items = []
+        if feed_settings.enabled:
+            for instrument_id in feed_settings.instruments:
+                exchange_id, market_type, symbol = instrument_id.split(":", 2)
+                base, quote = symbol.split("/", 1)
+                items.append(
+                    {
+                        "instrument_id": instrument_id,
+                        "exchange_id": exchange_id,
+                        "market_type": market_type,
+                        "base_asset": base,
+                        "quote_asset": quote,
+                    }
+                )
+        return {"feed_enabled": feed_settings.enabled, "items": items}
 
     @app.get("/health/recovery")
     def recovery() -> dict[str, Any]:

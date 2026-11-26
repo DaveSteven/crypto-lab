@@ -4,11 +4,11 @@ from crypto_lab.api.market_feed import MarketFeedSettings, build_market_feed
 from crypto_lab.realtime import MarketRealtimeBridge, RealtimeHubRegistry, Subscription
 
 
-def test_settings_default_to_enabled_okx_btc_usdt() -> None:
+def test_settings_default_to_enabled_okx_btc_and_eth_usdt() -> None:
     settings = MarketFeedSettings.from_env({})
     assert settings.enabled is True
     assert settings.exchange == "okx"
-    assert settings.instruments == ("okx:SPOT:BTC/USDT",)
+    assert settings.instruments == ("okx:SPOT:BTC/USDT", "okx:SPOT:ETH/USDT")
     assert settings.reconnect_enabled is True
     assert settings.dispatch_interval_ms == 200
 

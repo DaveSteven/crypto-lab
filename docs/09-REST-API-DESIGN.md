@@ -214,3 +214,4 @@ Execution 只读，不提供创建、修改或删除接口。
 
 当前限制：Phase 1 仍无认证，必须只绑定本机；默认手续费配置为明确版本化的模拟配置，并非交易所实时费率；订单到期执行和实时推送分别由串行事件入口及 Task 1.11 承担；列表已限制最大 200 项，游标分页留待数据规模验收后补充。
 - Task 1.12.10-A：新增 `/pnl` 与 Snapshot `pnl`（见 4.3.1）；Snapshot 读取改用 `REPEATABLE READ`；PostgreSQL 回归 7 项 + 单元 12 项。
+- Task 1.12.10-A：新增 `GET /api/v1/market/instruments`（实际接入 Feed 的品种：`instrument_id/exchange_id/market_type/base_asset/quote_asset`，Feed 关闭时 `feed_enabled=false` 且 `items=[]`，不猜测不存在的品种）；`GET /health/recovery` 见 docs/08 §6.1。
