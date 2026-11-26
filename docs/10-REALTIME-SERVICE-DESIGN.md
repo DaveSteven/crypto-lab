@@ -173,6 +173,7 @@ Committed Trading Events    Per-connection Send Queue
 - Verified：OKX 公共端点 tickers/trades/books 订阅、Business 端点 candle1m 订阅、订单簿快照/增量合并、15 秒真实接口验证（276 条消息，0 订阅错误，0 重连），报告见 `data/okx_realtime_feed_verification.json`。
 - Verified：本地系统代理 WSS CONNECT 失败，Feed 默认绕过系统代理直连。
 - Documented：OKX 8443 端口退役公告（连接实测同时收到 64010 notice）。
+- Verified：`GET /api/v5/market/history-candles` 实测接受 `limit>100`（文档记录上限为 100，实际按请求返回）；当前客户端上限 300 可用。
 
 ## 10. 错误及关闭码
 
@@ -218,3 +219,39 @@ Committed Trading Events    Per-connection Send Queue
 10. Task 1.11 仍维持本机无认证边界，不进入 React 或多进程部署。
 
 以上事项已由项目负责人于 2026-11-26 确认。Sequence、Replay、REST Snapshot、发布一致性、节流与 Heartbeat 的补充规则以本版本第 3、4、6、7、8 节为准。
+
+## 13. Task 1.11 验收记录（2026-11-26）
+
+### 13.1 Candle 功能验收矩阵
+
+| 项目 | 状态 | 说明 |
+|---|---|---|
+| REST 历史 K 线 | Verified | `GET /api/v1/market/candles`，真实 OKX history-candles，Decimal 字符串；服务层测试覆盖（含来源未配置 503、来源不可达 503、非法周期 400） |
+| WebSocket 实时 K 线 | Verified | Business 端点 candle1m，15 秒真实验证收到 11 条更新；未闭合 K 线按 (topic, instrument, interval, open_ts) 合并 |
+| 不同周期切换 | 部分完成 | REST 支持全部 6 个周期（1m/5m/15m/1h/4h/1d）；**WebSocket Feed 每进程只推送一个配置周期**（`CRYPTO_LAB_FEED_CANDLE_INTERVAL`），客户端可通过订阅过滤 interval，但服务端不会同时推送多周期。多周期推送留待 Task 1.12 按前端实际需要评估 |
+| 历史分页 | Verified | `before`/`after` 透传 OKX history-candles；服务层测试断言参数映射 |
+| 未闭合 K 线更新 | Verified | `is_closed=false` 可合并，同 key 只保留最新 |
+| 已闭合 K 线保护 | Verified | `is_closed=true` 不可合并丢失（测试覆盖） |
+| REST 与 WebSocket 数据合并 | 客户端职责 | 服务端两侧使用同一 Canonical Candle Schema 与稳定 `event_id`（`okx:{inst}:candle:{interval}:{open_ts}:{confirm}`），可按 (interval, open_ts) 去重合并；服务端不做预合并 |
+| 断线缺口补齐 | 客户端职责 + 服务端支持 | 无服务端自动缺口回填；客户端重连后经 REST `before`/`after` 拉取缺失区间 |
+
+### 13.2 Scheduler Lag 记录（Verified）
+
+- 调度周期可配置：`CRYPTO_LAB_FEED_DISPATCH_INTERVAL_MS`（默认 200ms，下限 50ms）。
+- 订单持久化记录 `configured_latency_ms`（用户配置延迟）、`scheduled_execution_ts_ms`（计划执行时间）、`executed_ts_ms`（实际执行时间）、`actual_simulated_delay_ms`（实际执行 − 提交时间）与 `scheduler_lag_ms`（实际执行 − 计划执行，反映调度器粒度）。
+- `actual_simulated_delay_ms` ≠ `configured_latency_ms`；两者之差即 scheduler lag，不得将配置延迟描述为实际执行延迟。
+- ManualClock 验证：`test_delayed_execution_waits_for_schedule`（500ms 配置延迟、计划 1500ms、执行 1600ms → lag=100ms、实际延迟=600ms）。
+- 已知限制：固定周期轮询调度引入最多一个调度周期的 lag；高精度事件驱动调度器留待后续评估（ADR 0007）。
+
+### 13.3 PostgreSQL 集成与完整链路验证（Verified）
+
+- 测试数据库：独立 Docker 容器（postgres:16-alpine，仅 `crypto_lab_test` 库），与开发库完全隔离；Alembic 迁移 upgrade 至 head（15 张表）。
+- 既有 12 项跳过的 PostgreSQL 集成测试全部补跑通过；当前无跳过的数据库测试。
+- 完整链路（确定性事件，无外部网络）：行情事件 → Dispatcher → Market State → Scheduler/TRADE_THROUGH → Unit of Work → PostgreSQL Commit → RealtimePublisher，共 7 项端到端测试：市价买/卖（含已实现盈亏与余额断言）、延迟执行、限价单穿价成交、资金流水、持仓更新、提交后事件发布、回滚零事件、重复 Trade 不重复结算、行情失效拒绝成交。
+
+### 13.4 验收中发现并修复的缺陷
+
+1. NUMERIC(50,24) 恢复值带 24 位小数尺度参与金融计算，费率相乘后超出列精度——恢复路径规范化尾零（数值不变）。
+2. 全平仓后 positions 投影残留零数量行，且导致 restore_portfolio 一致性校验失败——投影删除零数量持仓。
+3. Dispatcher 在事务提交前更新内存 trade_state 缓存，回滚后与数据库不一致——缓存改为提交后更新。
+4. 持仓投影重建缺少本次事务新增成交——改为显式包含新旧成交。

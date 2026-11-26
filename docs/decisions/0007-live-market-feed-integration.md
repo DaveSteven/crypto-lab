@@ -51,5 +51,6 @@ Task 1.11 需要向本地 React 客户端推送真实 Canonical 行情，并要�
 
 - 多账户环境按账户分组串行执行，跨账户的同一时刻订单不保证全局严格有序（Phase 1 单账户场景不受影响）。
 - 进程重启后行情事件不回放（ADR 0006 第 8 节），客户端以 REST 恢复。
-- 调度驱动间隔默认 200ms，市价单实际执行时间存在该量级的调度粒度。
-- 无数据库环境（本地无 PostgreSQL）下分发器的端到端持久化测试跳过。
+- 调度驱动间隔默认 200ms，市价单实际执行时间存在该量级的 scheduler lag；订单已持久化区分 `configured_latency_ms` 与 `scheduler_lag_ms`（见 docs/10 §13.2）。高精度事件驱动调度器留待后续评估。
+- WebSocket Feed 每进程只推送一个配置的 K 线周期；多周期推送待 Task 1.12 按前端需要评估。
+- Dispatcher 端到端持久化测试需要 `CRYPTO_LAB_TEST_DATABASE_URL`（独立测试容器），未配置时跳过。

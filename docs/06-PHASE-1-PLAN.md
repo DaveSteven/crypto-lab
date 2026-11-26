@@ -154,6 +154,13 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - 配置经 CRYPTO_LAB_FEED_* 环境变量管理；自动化测试显式禁用或注入可控连接。
 - 完成 15 秒 OKX 公共 WebSocket 真实接口验证（0 订阅错误、0 重连），报告见 data/okx_realtime_feed_verification.json。
 
+最终验收（2026-11-26）：
+
+- 独立 PostgreSQL 测试容器完成迁移并补跑全部数据库集成测试（含 12 项此前跳过），无剩余数据库跳过项。
+- 完整交易链路端到端验证通过：市价买卖、延迟执行、限价单穿价成交、资金流水、持仓盈亏、提交后事件发布、回滚零事件、重复 Trade 去重、行情失效拒绝成交（7 项测试）。
+- Scheduler lag 已持久化区分 configured_latency 与 scheduler_lag；Candle 验收矩阵及未完成项记录见 docs/10 §13。
+- 验收修复 4 项缺陷：NUMERIC 恢复尺度溢出、平仓持仓投影残留、Dispatcher 回滚后内存缓存不一致、持仓投影缺少本次成交。
+
 ### Task 1.12 — React 前端应用
 
 - [ ] 初始化 React、TypeScript、Vite、Tailwind CSS、路由及测试工具。
