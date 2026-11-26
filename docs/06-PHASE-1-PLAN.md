@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.2 Completed） |
+| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.3 Completed） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -182,10 +182,11 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 #### Task 1.12.3 — API 与 WebSocket 客户端层
 
-- [ ] Zod 契约 Schema（对应 OpenAPI 与 WS 消息信封）。
-- [ ] REST Client：幂等键生成、错误信封解析、Decimal 字符串。
-- [ ] WS Client：连接状态机、订阅/resume_from 重放、心跳、resync 处理。
-- [ ] 交易状态一致性流程（缓冲 → 快照 → 按 state_version/event_index 应用）。
+- [x] Zod 契约 Schema（对应 OpenAPI 与 WS 消息信封，含 delivery_sequence 与控制消息）。
+- [x] REST Client：幂等键生成、错误信封解析为 ApiError、Decimal 字符串、列表/快照/K 线响应校验。
+- [x] WS Client：连接状态机、订阅自动附加 resume_from 游标、心跳应答、退避重连；delivery_sequence 缺口与 stream_id 变更触发 resync，stream_sequence 缺口视为正常。
+- [x] TradingStateSync：缓冲 → REST 快照 → 丢弃过期版本 → 按 (state_version, event_index) 应用，event_id 去重。
+- [x] 17 项客户端层测试（MSW REST 场景 + 脚本化 WS 套接字），build/lint 通过；后端基线保持 300 passed。
 
 #### Task 1.12.4 — 布局框架与页面骨架
 
