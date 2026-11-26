@@ -14,6 +14,7 @@ EXPECTED_TABLES = {
     "simulated_liquidity",
     "liquidity_consumptions",
     "id_generator_state",
+    "api_idempotency_keys",
 }
 
 

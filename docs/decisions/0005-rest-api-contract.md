@@ -1,6 +1,6 @@
 # ADR-0005：REST API Contract 与应用服务边界
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-11-26
 - 适用范围：Phase 1 Task 1.10～1.13
 
@@ -8,7 +8,7 @@
 
 领域层与 PostgreSQL 持久化已经完成，但不能直接暴露为 HTTP。REST API 必须保护金融规则、环境隔离、事务及幂等性，同时为后续 React 和 WebSocket 联调提供稳定 Contract。
 
-## 决策提案
+## 决策
 
 1. 使用 FastAPI、Pydantic 和同步 SQLAlchemy Session；Route 使用同步函数。
 2. API 版本前缀为 `/api/v1`。
@@ -26,6 +26,6 @@
 - 需要建立 Application Service 和类型化 Event Dispatcher；不能从 Route 直接修改 Repository 或领域对象。
 - 后续前端以生成的 OpenAPI 为 Contract，不另行维护冲突的手写字段定义。
 
-## 待确认
+## 确认记录
 
-以上方案及 [`../09-REST-API-DESIGN.md`](../09-REST-API-DESIGN.md) 的 Endpoint、幂等、错误和安全约定需项目负责人确认后实施。
+项目负责人已于 2026-11-26 确认以上方案及 [`../09-REST-API-DESIGN.md`](../09-REST-API-DESIGN.md) 的 Endpoint、幂等、错误和安全约定。

@@ -243,3 +243,15 @@ id_generator_state = Table(
     Column("next_sequence", BigInteger, nullable=False),
     CheckConstraint("next_sequence > 0", name="ck_id_sequence_positive"),
 )
+
+api_idempotency_keys = Table(
+    "api_idempotency_keys",
+    metadata,
+    Column("environment_id", String(64), primary_key=True),
+    Column("scope", String(100), primary_key=True),
+    Column("idempotency_key", String(200), primary_key=True),
+    Column("request_hash", String(64), nullable=False),
+    Column("response_status", BigInteger, nullable=False),
+    Column("response_json", JSONB, nullable=False),
+    Column("created_ts_ms", BigInteger, nullable=False),
+)

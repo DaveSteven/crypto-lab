@@ -14,15 +14,18 @@ authors = [
 ]
 dependencies = [
   "alembic>=1.14,<2",
+  "fastapi>=0.115,<1",
   "pydantic>=2.12,<3",
   "psycopg[binary]>=3.2,<4",
   "python-socks[asyncio]>=2.7,<3",
   "sqlalchemy>=2.0,<2.1",
+  "uvicorn>=0.34,<1",
   "websockets>=15,<16",
 ]
 
 [project.optional-dependencies]
 dev = [
+  "httpx>=0.28,<1",
   "pytest>=8,<9",
   "ruff>=0.8,<1",
 ]

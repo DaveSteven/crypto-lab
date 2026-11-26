@@ -6,7 +6,7 @@
 |---|---|
 | 文档版本 | V0.1 |
 | 对应任务 | Phase 1 Task 1.10 |
-| 状态 | Proposed / 待项目负责人确认 |
+| 状态 | Accepted / Implementation Active |
 | 框架 | FastAPI |
 
 ## 1. 目标与边界
