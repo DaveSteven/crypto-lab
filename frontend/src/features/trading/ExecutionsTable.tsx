@@ -4,10 +4,12 @@ import { useDetailStore } from './detailStore'
 import { Button, EmptyState } from '@/shared/ui'
 
 /** Fill History view (docs/12 §12.3): read-only, server-projected. */
-export function ExecutionsTable({ compact = false }: { compact?: boolean }) {
+export function ExecutionsTable({ compact = false, limit }: { compact?: boolean; limit?: number }) {
   const executions = useTradingStore((state) => state.executions)
   const openDetail = useDetailStore((state) => state.open)
-  const sorted = [...executions].sort((a, b) => b.executed_ts_ms - a.executed_ts_ms)
+  const sorted = [...executions]
+    .sort((a, b) => b.executed_ts_ms - a.executed_ts_ms)
+    .slice(0, limit)
 
   if (sorted.length === 0) return <EmptyState message="暂无成交。" />
 

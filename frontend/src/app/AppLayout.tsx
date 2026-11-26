@@ -52,7 +52,7 @@ export function AppLayout() {
           <span className="text-sm font-semibold tracking-tight text-brand">Crypto Lab</span>
           <nav className="flex items-center gap-1" aria-label="主导航">
             {/* Per docs/12 §5.2: only implemented pages get nav entries.
-                Overview and Markets appear in Tasks 1.12.10 / 1.12.11. */}
+                Markets appears in Task 1.12.11. */}
             <NavLink
               to="/trading"
               className={({ isActive }) =>
@@ -63,6 +63,17 @@ export function AppLayout() {
               }
             >
               交易
+            </NavLink>
+            <NavLink
+              to="/overview"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-[6px] px-3 py-1.5 text-sm transition-colors duration-150',
+                  isActive ? 'bg-elevated font-medium text-brand' : 'text-ink-secondary hover:bg-elevated/60',
+                )
+              }
+            >
+              总览
             </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
