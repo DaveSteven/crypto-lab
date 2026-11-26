@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import os
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -16,11 +18,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from crypto_lab.api.errors import ApplicationError
+from crypto_lab.api.market_feed import (
+    DOCUMENTED_OKX_SPOT_RULES,
+    MarketFeedSettings,
+    build_market_feed,
+)
 from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
 from crypto_lab.api.service import ApplicationService
 from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.persistence import PersistenceError
 from crypto_lab.realtime import (
+    EnvironmentMarketDispatcher,
     RealtimeHubRegistry,
     RealtimePublisher,
     ReplayUnavailable,
@@ -36,6 +44,33 @@ from crypto_lab.trading import FeeSchedule
 
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)]
 
+_LOGGER = logging.getLogger("crypto_lab.api.app")
+
+
+def _environment_exists(service: Any) -> Any:
+    def exists(environment_id: str) -> bool:
+        try:
+            service.get_environment(environment_id)
+        except (ApplicationError, PersistenceError):
+            return False
+        return True
+
+    return exists
+
+
+def _dispatch_canonical(dispatcher: Any) -> Any:
+    async def consume(event: Any) -> None:
+        await asyncio.to_thread(dispatcher.apply_trade, event)
+
+    return consume
+
+
+def _dispatch_book(dispatcher: Any) -> Any:
+    async def consume(view: Any) -> None:
+        await asyncio.to_thread(dispatcher.apply_order_book_view, view)
+
+    return consume
+
 
 def create_app(
     *,
@@ -43,32 +78,77 @@ def create_app(
     engine: Engine | None = None,
     service: Any | None = None,
     realtime: RealtimeHubRegistry | None = None,
+    market_feed: Any | None = None,
+    market_feed_settings: MarketFeedSettings | None = None,
 ) -> FastAPI:
     owns_engine = engine is None and service is None
     actual_engine = engine
     actual_realtime = realtime or RealtimeHubRegistry()
     publisher = RealtimePublisher(actual_realtime)
+    feed_settings = market_feed_settings or MarketFeedSettings.from_env()
+    dispatcher: EnvironmentMarketDispatcher | None = None
+    actual_market_feed = market_feed
     if service is None:
         url = database_url or os.getenv("CRYPTO_LAB_DATABASE_URL")
         if actual_engine is None:
             if not url:
                 raise RuntimeError("CRYPTO_LAB_DATABASE_URL is required")
             actual_engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+        fee_schedule = FeeSchedule(
+            schedule_id="phase1-default-v1",
+            maker_rate=Decimal("0.001"),
+            taker_rate=Decimal("0.001"),
+        )
         service = ApplicationService(
             actual_engine,
-            fee_schedule=FeeSchedule(
-                schedule_id="phase1-default-v1",
-                maker_rate=Decimal("0.001"),
-                taker_rate=Decimal("0.001"),
-            ),
+            fee_schedule=fee_schedule,
             realtime_publisher=publisher,
             candle_client=OkxCandleClient(),
         )
+        if feed_settings.enabled:
+            dispatcher = EnvironmentMarketDispatcher(
+                transaction=service.uow.transaction,
+                environment_exists=_environment_exists(service),
+                fee_schedule=fee_schedule,
+                market_rules=DOCUMENTED_OKX_SPOT_RULES,
+                instruments=feed_settings.instruments,
+                now_ms=service.now_ms,
+                max_book_age_ms=feed_settings.max_book_age_ms,
+            )
+            if actual_market_feed is None:
+                actual_market_feed = build_market_feed(
+                    feed_settings,
+                    actual_realtime,
+                    on_canonical=_dispatch_canonical(dispatcher),
+                    on_order_book_view=_dispatch_book(dispatcher),
+                )
+
+    async def _dispatch_driver() -> None:
+        assert dispatcher is not None
+        interval = max(feed_settings.dispatch_interval_ms, 50) / 1_000
+        while True:
+            await asyncio.sleep(interval)
+            await asyncio.to_thread(dispatcher.run_due)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         publisher.start(asyncio.get_running_loop())
+        feed_task = None
+        driver_task = None
+        if actual_market_feed is not None:
+            feed_task = asyncio.create_task(actual_market_feed.run())
+        if dispatcher is not None:
+            driver_task = asyncio.create_task(_dispatch_driver())
         yield
+        if feed_task is not None:
+            await actual_market_feed.stop()
+            # The feed may already have failed; its error must not break shutdown.
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(feed_task, timeout=5)
+        if driver_task is not None:
+            driver_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await driver_task
         publisher.stop()
         if owns_engine and actual_engine is not None:
             actual_engine.dispose()
@@ -82,6 +162,9 @@ def create_app(
     app.state.service = service
     app.state.realtime = actual_realtime
     app.state.realtime_publisher = publisher
+    app.state.market_feed = actual_market_feed
+    app.state.market_feed_settings = feed_settings
+    app.state.market_dispatcher = dispatcher
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):
@@ -123,6 +206,19 @@ def create_app(
     @app.post("/api/v1/environments", status_code=201)
     def create_environment(body: EnvironmentCreate, key: IdempotencyKey) -> JSONResponse:
         status, result = service.create_environment(body, key)
+        if status == 201:
+            environment_id = result["environment_id"]
+            # Register the hub and seed the environment with the current
+            # valid market snapshot so it does not wait for the next delta.
+            actual_realtime.hub(environment_id)
+            if dispatcher is not None:
+                try:
+                    dispatcher.register_environment(environment_id)
+                except Exception:
+                    _LOGGER.exception(
+                        "failed to register environment %s with market dispatcher",
+                        environment_id,
+                    )
         return JSONResponse(result, status_code=status)
 
     @app.get("/api/v1/environments/{environment_id}")

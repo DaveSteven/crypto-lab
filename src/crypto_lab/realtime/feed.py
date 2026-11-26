@@ -62,6 +62,10 @@ async def _default_connection(url: str) -> Connection:
     )
 
 
+CanonicalConsumer = Callable[[Any], Awaitable[None]]
+OrderBookConsumer = Callable[[Any], Awaitable[None]]
+
+
 class OkxMarketFeed:
     """Drive one OKX public WebSocket connection into one environment hub."""
 
@@ -80,6 +84,8 @@ class OkxMarketFeed:
         stale_after_ms: int = 10_000,
         reconnect_delays_seconds: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0),
         order_book_state: OrderBookMarketState | None = None,
+        on_canonical: CanonicalConsumer | None = None,
+        on_order_book_view: OrderBookConsumer | None = None,
     ) -> None:
         self.bridge = bridge
         self.environment_id = environment_id
@@ -93,8 +99,12 @@ class OkxMarketFeed:
         self.stale_after_ms = stale_after_ms
         self.reconnect_delays_seconds = reconnect_delays_seconds
         self.order_book_state = order_book_state or OrderBookMarketState()
+        self.on_canonical = on_canonical
+        self.on_order_book_view = on_order_book_view
         if not self.instruments:
             raise ValueError("feed requires at least one instrument")
+        for instrument_id in self.instruments:
+            _okx_instrument(instrument_id)
         for channel in self.channels:
             if channel not in CHANNEL_REQUEST_NAME and channel != CANDLE_KIND:
                 raise ValueError(f"unsupported feed channel: {channel}")
@@ -125,6 +135,8 @@ class OkxMarketFeed:
                 raise
             except Exception:
                 self.stats["reconnects"] += 1
+                if not self.reconnect_delays_seconds:
+                    return
                 await self._sleep(self._next_backoff())
                 continue
             self._backoff_index = 0
@@ -142,6 +154,8 @@ class OkxMarketFeed:
                 await self._shutdown_connection(connection)
             if self._stopping:
                 break
+            if not self.reconnect_delays_seconds:
+                return
             self.stats["reconnects"] += 1
             await self._sleep(self._next_backoff())
 
@@ -319,6 +333,8 @@ class OkxMarketFeed:
         await self.bridge.publish_order_book_view(
             self.environment_id, view, now_ms=now_ms, stale_after_ms=self.stale_after_ms
         )
+        if healthy and self.on_order_book_view is not None:
+            await self.on_order_book_view(view)
 
     async def _publish_canonical(self, event: Any, now_ms: int) -> None:
         valid = event.quality_status is DataQualityStatus.VALID
@@ -337,6 +353,8 @@ class OkxMarketFeed:
                 reason="market data resumed",
             )
         await self.bridge.publish_canonical(self.environment_id, event)
+        if valid and self.on_canonical is not None:
+            await self.on_canonical(event)
 
     def _record_data(self, instrument_id: str, now_ms: int) -> None:
         self._last_data_ms[instrument_id] = now_ms

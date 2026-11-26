@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from crypto_lab.market_data import OrderBookView
 from crypto_lab.models import DataQualityStatus, ExchangeId, PriceLevel
 from crypto_lab.persistence import schema
+from crypto_lab.realtime.hub import RealtimeEvent
 from crypto_lab.trading import (
     AccountLedger,
     AssetBalance,
@@ -81,6 +83,59 @@ class PostgresStore:
 
     def stage_realtime_event(self, event: object) -> None:
         self.realtime_events.append(event)
+
+    def stage_execution_events(
+        self,
+        *,
+        environment_id: str,
+        account_id: str,
+        state_version: int,
+        transaction_id: str,
+        orders: list[dict[str, object]],
+        balances: list[dict[str, object]],
+        created_ts_ms: int,
+    ) -> None:
+        """Stage committed-order/balance notifications for a trading transaction."""
+        event_index = 0
+        for order in orders:
+            self.stage_realtime_event(
+                RealtimeEvent(
+                    topic="orders",
+                    event_id=f"{transaction_id}:order:{order['order_id']}",
+                    event_ts_ms=created_ts_ms,
+                    payload=order,
+                    account_id=account_id,
+                    order_id=str(order["order_id"]),
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1
+        for balance in balances:
+            self.stage_realtime_event(
+                RealtimeEvent(
+                    topic="balances",
+                    event_id=f"{transaction_id}:balance:{balance['asset']}",
+                    event_ts_ms=created_ts_ms,
+                    payload=balance,
+                    account_id=account_id,
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1
+
+    def load_environment(self, environment_id: str) -> Any:
+        row = self.session.execute(
+            select(schema.simulation_environments).where(
+                schema.simulation_environments.c.environment_id == environment_id
+            )
+        ).mappings().one_or_none()
+        if row is None:
+            raise PersistenceError(f"unknown simulation environment: {environment_id}")
+        return row
 
     def lock_environment(self, environment_id: str) -> None:
         row = self.session.execute(
@@ -447,6 +502,106 @@ class PostgresStore:
             )
         )
         return liquidity
+
+    def restore_liquidity_optimistic(
+        self,
+        *,
+        environment_id: str,
+        exchange_id: ExchangeId,
+        instrument_id: str,
+    ) -> SimulatedLiquidityView | None:
+        """Restore persisted liquidity, returning None when never synchronized."""
+        row = (
+            self.session.execute(
+                select(schema.simulated_liquidity).where(
+                    schema.simulated_liquidity.c.environment_id == environment_id,
+                    schema.simulated_liquidity.c.exchange_id == exchange_id.value,
+                    schema.simulated_liquidity.c.instrument_id == instrument_id,
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        liquidity = SimulatedLiquidityView(environment_id)
+        liquidity.restore_state(
+            (
+                _deserialize_book(row["market_book_json"]),
+                _restore_decimal_levels(row["residual_bids_json"]),
+                _restore_decimal_levels(row["residual_asks_json"]),
+                set(row["consumption_ids_json"]),
+            )
+        )
+        return liquidity
+
+    def due_schedule_groups(
+        self, environment_id: str, now_ms: int
+    ) -> list[tuple[str, list[str]]]:
+        """Due scheduled order IDs grouped by account, in execution order."""
+        rows = self.session.execute(
+            select(
+                schema.scheduled_executions.c.order_id,
+                schema.paper_orders.c.account_id,
+                schema.scheduled_executions.c.scheduled_execution_ts_ms,
+                schema.scheduled_executions.c.order_sequence,
+            )
+            .select_from(
+                schema.scheduled_executions.join(
+                    schema.paper_orders,
+                    schema.paper_orders.c.order_id == schema.scheduled_executions.c.order_id,
+                )
+            )
+            .where(
+                schema.scheduled_executions.c.environment_id == environment_id,
+                schema.scheduled_executions.c.scheduled_execution_ts_ms <= now_ms,
+            )
+            .order_by(
+                schema.scheduled_executions.c.scheduled_execution_ts_ms,
+                schema.scheduled_executions.c.order_sequence,
+            )
+        ).mappings()
+        groups: dict[str, list[str]] = {}
+        for row in rows:
+            groups.setdefault(row["account_id"], []).append(row["order_id"])
+        return list(groups.items())
+
+    def last_processed_trade_ordering_key(self, environment_id: str) -> tuple[int, int, str] | None:
+        row = (
+            self.session.execute(
+                select(schema.processed_market_events.c.result_json)
+                .where(
+                    schema.processed_market_events.c.environment_id == environment_id,
+                    schema.processed_market_events.c.event_type == "TRADE",
+                )
+                .order_by(schema.processed_market_events.c.processed_ts_ms.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        result = row["result_json"]
+        ordering_key = result.get("ordering_key") if isinstance(result, dict) else None
+        if not isinstance(ordering_key, list) or len(ordering_key) != 3:
+            return None
+        return (ordering_key[0], ordering_key[1], ordering_key[2])
+
+    def primary_account_id(self, environment_id: str) -> str | None:
+        row = (
+            self.session.execute(
+                select(schema.paper_accounts.c.account_id)
+                .where(schema.paper_accounts.c.environment_id == environment_id)
+                .order_by(
+                    schema.paper_accounts.c.created_ts_ms, schema.paper_accounts.c.account_id
+                )
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        return None if row is None else row["account_id"]
 
     def _upsert_account(self, environment_id: str, account: PaperAccount) -> None:
         values = account.model_dump(mode="python") | {"environment_id": environment_id}

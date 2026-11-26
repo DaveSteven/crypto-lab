@@ -323,6 +323,9 @@ class RealtimeHubRegistry:
             )
         return self._hubs[environment_id]
 
+    def environment_ids(self) -> tuple[str, ...]:
+        return tuple(self._hubs)
+
     async def publish(self, environment_id: str, event: RealtimeEvent) -> StreamEvent:
         result = await self.hub(environment_id).publish(event)
         self._trim_global_replay()
