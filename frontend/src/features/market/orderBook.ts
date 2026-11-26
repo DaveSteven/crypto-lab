@@ -23,6 +23,16 @@ export interface BookView {
   spreadRate: string | null
 }
 
+const BOOK_FIXED_HEIGHT_PX = 88
+const BOOK_QUALITY_HEIGHT_PX = 25
+const BOOK_ROW_HEIGHT_PX = 18
+
+/** Split the available body height evenly between asks and bids. */
+export function calculateVisibleDepth(height: number, qualityWarning = false): number {
+  const fixedHeight = BOOK_FIXED_HEIGHT_PX + (qualityWarning ? BOOK_QUALITY_HEIGHT_PX : 0)
+  return Math.max(3, Math.min(50, Math.floor((height - fixedHeight) / (BOOK_ROW_HEIGHT_PX * 2))))
+}
+
 function withCumulative(levels: Level[], descending: boolean, depth: number): BookRow[] {
   const sorted = [...levels].sort((a, b) => {
     const diff = new Decimal(a.price).comparedTo(b.price)

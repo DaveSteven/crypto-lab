@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useMarketStore } from './marketStore'
 import { useInstrument } from './instrumentStore'
-import { buildBookView, type BookRow } from './orderBook'
+import { buildBookView, calculateVisibleDepth, type BookRow } from './orderBook'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
 import { EmptyState, Tabs } from '@/shared/ui'
 import { cn } from '@/shared/lib/utils'
@@ -30,7 +30,7 @@ function Row({
       disabled={disabled}
       onClick={() => pickPrice(row.price)}
       title={disabled ? '行情不可用，无法取价' : '点击填入限价（不会自动下单）'}
-      className="relative grid w-full grid-cols-3 gap-2 px-3 py-[3px] text-left text-[12px] hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-60"
+      className="relative grid h-[18px] w-full grid-cols-3 items-center gap-2 px-3 text-left text-[12px] leading-4 hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span
         aria-hidden
@@ -59,12 +59,12 @@ const OrderBookView = memo(function OrderBookView() {
     const node = containerRef.current
     if (node === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(([entry]) => {
-      const rowsPerSide = Math.max(3, Math.floor((entry.contentRect.height - 96) / 44))
+      const rowsPerSide = calculateVisibleDepth(entry.contentRect.height, !qualityOk)
       setVisibleDepth(rowsPerSide)
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [])
+  }, [qualityOk])
   if (view === null || (view.asks.length === 0 && view.bids.length === 0)) {
     return <EmptyState message="暂无订单簿数据，等待行情。" />
   }

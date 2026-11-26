@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { MarketDepthPanel } from './MarketDepthPanel'
 import { MAX_TRADES, useMarketStore } from './marketStore'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
+import { calculateVisibleDepth } from './orderBook'
 
 const INSTRUMENT = 'okx:SPOT:BTC/USDT'
 let seq = 0
@@ -38,6 +39,13 @@ beforeEach(() => {
 })
 
 describe('MarketDepthPanel', () => {
+  test('uses the available height for more real levels without exceeding the safety cap', () => {
+    expect(calculateVisibleDepth(450)).toBe(10)
+    expect(calculateVisibleDepth(720)).toBe(17)
+    expect(calculateVisibleDepth(720, true)).toBe(16)
+    expect(calculateVisibleDepth(10_000)).toBe(50)
+  })
+
   test('shows an honest empty state without data', () => {
     render(<MarketDepthPanel />)
     expect(screen.getByText(/暂无订单簿数据/)).toBeVisible()
