@@ -33,8 +33,8 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（Gate A Accepted；1.12.3 UI 验收通过；1.12.6 完成，待真实行情实测） |
-| 1.13 | 前后端联调与 Phase 1 验收 | Pending |
+| 1.12 | React 前端应用 | Completed（Gate E Accepted，2026-11-26） |
+| 1.13 | 前后端联调与 Phase 1 验收 | In Progress |
 
 ### Task 1.1 — 模拟账户与资金流水
 
@@ -273,7 +273,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] E2E 基础：真实后端 + 隔离测试库 + 关闭 Feed（引导/下单意图/订单表/账户/会话恢复 2 项通过）；运行须剥离系统代理（docs/11 §9）。
 - [x] 完整 E2E（确认流程、成交与余额变化、行情失效禁用与恢复、布局持久化、环境切换隔离）：13 项，连续 4 轮全部通过；使用 SYNTHETIC 脚本化行情的测试专用后端 `tests/support/e2e_server.py`（拒绝非 test 库）。
 - [x] Desktop Acceptance Matrix（1280×720 / 1440×900 / 1920×1080 / 2560×1440，含按钮可点击命中测试与截图）、可访问性自动检查、性能检查（Long Task 0、堆增长 < 1.2 MB）。**未做**：Safari/Firefox/Edge、颜色对比度、读屏、真实高频行情下的前端性能。
-- [x] Task 1.12 验收报告：docs/13-FRONTEND-ACCEPTANCE-REPORT.md（待项目负责人验收）。订单簿事件随环境数线性放大已确认为 Phase 1 Known Limitation / Technical Debt，不阻塞 Task 1.12；按 Task 1.13 独立性能基线复测。不自动进入 Task 1.13。
+- [x] Task 1.12 验收报告：docs/13-FRONTEND-ACCEPTANCE-REPORT.md；项目负责人于 2026-11-26 确认 Gate E 通过。订单簿事件随环境数线性放大已确认为 Phase 1 Known Limitation / Technical Debt，不阻塞 Task 1.12；按 Task 1.13 独立性能基线复测。
 
 
 ### Task 1.13 — 前后端联调与 Phase 1 验收

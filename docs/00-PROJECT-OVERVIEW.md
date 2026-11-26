@@ -656,4 +656,5 @@ Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现
 - [x] 完成 Phase 1 Task 1.9 PostgreSQL 数据持久化。
 - [x] 完成 Phase 1 Task 1.10 后端服务与 REST API。
 - [x] 完成 Phase 1 Task 1.11 实时行情服务。
+- [x] 完成 Phase 1 Task 1.12 React 前端应用。
 
