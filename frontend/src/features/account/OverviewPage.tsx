@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router-dom'
 import { useMarketStore } from '@/features/market/marketStore'
-import { useTradingStore } from '@/features/trading/tradingStore'
+import { realizedPnlByCurrency, useTradingStore } from '@/features/trading/tradingStore'
 import { ExecutionsTable } from '@/features/trading/ExecutionsTable'
 import { formatDecimal, formatTime } from '@/shared/lib/format'
 import { Badge, EmptyState, Panel, TermTip } from '@/shared/ui'
@@ -53,6 +53,7 @@ export function OverviewPage() {
   const balances = useTradingStore((state) => state.balances)
   const positions = useTradingStore((state) => state.positions)
   const executions = useTradingStore((state) => state.executions)
+  const pnl = useTradingStore((state) => state.pnl)
   const orderBooks = useMarketStore((state) => state.orderBooks)
   const quality = useMarketStore((state) => state.quality)
   const now = useNow(1_000)
@@ -69,7 +70,16 @@ export function OverviewPage() {
     return result
   }, [orderBooks, quality])
 
-  const valuation = computeValuation({ balances, positions, executions, bids, nowMs: now })
+  const valuation = computeValuation({
+    balances,
+    positions,
+    executions,
+    bids,
+    nowMs: now,
+    realizedByCurrency: realizedPnlByCurrency(pnl),
+  })
+  const realized = valuation.realizedByCurrency
+  const realizedEntries = realized === null ? null : Object.entries(realized)
 
   return (
     <div className="h-full overflow-auto p-3">
@@ -102,9 +112,20 @@ export function OverviewPage() {
           />
           <Metric
             label="已实现盈亏"
-            tip="已卖出部分的盈亏。仅统计当前仍有记录的持仓；已完全平仓的持仓后端暂未保留，无法汇总时显示 --。"
-            value={valuation.realizedPnl === null ? '--' : `${formatDecimal(valuation.realizedPnl)} USDT`}
-            tone={signClass(valuation.realizedPnl)}
+            tip="账户自创建以来、已卖出部分的累计盈亏（含已完全平仓的持仓），按移动平均成本法由完整成交历史计算；不同币种分别显示，不相加。无法取得时显示 --，不用 0 代替。"
+            value={
+              realizedEntries === null
+                ? '--'
+                : realizedEntries.length === 0
+                  ? '0'
+                  : realizedEntries.map(([currency, amount]) => `${formatDecimal(amount)} ${currency}`).join(' · ')
+            }
+            tone={
+              realizedEntries !== null && realizedEntries.length === 1
+                ? signClass(realizedEntries[0][1])
+                : undefined
+            }
+            testId="realized-pnl"
           />
           <Metric
             label="未实现盈亏"

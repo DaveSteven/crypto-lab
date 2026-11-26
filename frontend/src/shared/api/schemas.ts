@@ -122,6 +122,28 @@ export const Position = z.object({
   cumulative_fees: DecimalString,
 })
 
+export const PnlInstrument = z.object({
+  instrument_id: z.string(),
+  base_asset: z.string().optional(),
+  quote_asset: z.string(),
+  quantity: DecimalString.optional(),
+  realized_pnl: DecimalString,
+  cumulative_fees: DecimalString,
+})
+
+/** Account lifetime realized PnL derived from the full Fill History (docs/09 §4.3.1). */
+export const AccountPnl = z.object({
+  status: z.enum(['AVAILABLE', 'UNAVAILABLE']),
+  reason: z.string().optional(),
+  state_version: z.number().optional(),
+  as_of_ts_ms: z.number().optional(),
+  scope: z.string().optional(),
+  cost_method: z.string().optional(),
+  cumulative_realized_pnl_by_currency: z.record(z.string(), DecimalString).optional(),
+  cumulative_fees_by_currency: z.record(z.string(), DecimalString).optional(),
+  instruments: z.array(PnlInstrument).optional(),
+})
+
 export const Snapshot = z.object({
   environment_id: z.string(),
   account_id: z.string(),
@@ -131,6 +153,7 @@ export const Snapshot = z.object({
   orders: z.array(PaperOrder),
   executions: z.array(ExecutionRecord),
   positions: z.array(Position),
+  pnl: AccountPnl.optional(),
 })
 
 export const Candle = z.object({
@@ -208,6 +231,22 @@ export type PaperOrder = z.infer<typeof PaperOrder>
 export type ExecutionRecord = z.infer<typeof ExecutionRecord>
 export type Position = z.infer<typeof Position>
 export type Snapshot = z.infer<typeof Snapshot>
+export type AccountPnl = z.infer<typeof AccountPnl>
+export type PnlInstrument = z.infer<typeof PnlInstrument>
+
+export const FeedInstrument = z.object({
+  instrument_id: z.string(),
+  exchange_id: z.string(),
+  market_type: z.string(),
+  base_asset: z.string(),
+  quote_asset: z.string(),
+})
+export const MarketInstruments = z.object({
+  feed_enabled: z.boolean(),
+  items: z.array(FeedInstrument),
+})
+export type FeedInstrument = z.infer<typeof FeedInstrument>
+export type MarketInstruments = z.infer<typeof MarketInstruments>
 export type Candle = z.infer<typeof Candle>
 export type CandleEnvelope = z.infer<typeof CandleEnvelope>
 export type CandleHistoryResponse = z.infer<typeof CandleHistoryResponse>

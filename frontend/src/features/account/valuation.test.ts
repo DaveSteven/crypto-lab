@@ -28,6 +28,7 @@ function input(patch: Partial<ValuationInput> = {}): ValuationInput {
     ] as never,
     bids: { [BTC]: { price: '1000', receivedTsMs: NOW - 1_000 } },
     nowMs: NOW,
+    realizedByCurrency: { USDT: '5' },
     ...patch,
   }
 }
@@ -41,7 +42,7 @@ describe('computeValuation', () => {
     expect(v.incomplete).toBe(false)
     expect(v.positions[0].unrealizedPnl).toBe('100')
     expect(v.unrealizedPnl).toBe('100')
-    expect(v.realizedPnl).toBe('5')
+    expect(v.realizedByCurrency).toEqual({ USDT: '5' })
     expect(v.feesByAsset).toEqual([{ asset: 'USDT', amount: '1' }])
     expect(v.assets.map((a) => a.share)).toEqual(['90.10', '9.90'])
   })
@@ -79,9 +80,59 @@ describe('computeValuation', () => {
     expect(v.assets.map((a) => a.asset)).toEqual(['USDT', 'XRP'])
   })
 
-  test('realized PnL is unavailable when fills exist but all positions were closed', () => {
-    const v = computeValuation(input({ positions: [] }))
-    expect(v.realizedPnl).toBeNull()
+  test('realized PnL is passed through from the backend and never recomputed from positions', () => {
+    // Closed position: no positions left, but the backend lifetime PnL is kept.
+    const closed = computeValuation(input({ positions: [], realizedByCurrency: { USDT: '-12.5' } }))
+    expect(closed.realizedByCurrency).toEqual({ USDT: '-12.5' })
+    expect(computeValuation(input({ realizedByCurrency: null })).realizedByCurrency).toBeNull()
+  })
+
+  test('BTC and ETH are valued together with their own bids; frozen amounts count once', () => {
+    const ETH = 'okx:SPOT:ETH/USDT'
+    const v = computeValuation(
+      input({
+        balances: [
+          { asset: 'USDT', available: '1000', locked: '500' }, // 1500 incl. frozen
+          { asset: 'BTC', available: '1', locked: '1' }, // 2 BTC incl. frozen
+          { asset: 'ETH', available: '10', locked: '0' },
+        ],
+        positions: [],
+        bids: {
+          [BTC]: { price: '1000', receivedTsMs: NOW - 100 },
+          [ETH]: { price: '50', receivedTsMs: NOW - 200 },
+        },
+      }),
+    )
+    expect(v.totalAssets).toBe('4000') // 1500 + 2*1000 + 10*50
+    expect(v.available).toBe('1000')
+    expect(v.locked).toBe('500')
+    expect(v.incomplete).toBe(false)
+    expect(v.assets.map((a) => [a.asset, a.value])).toEqual([
+      ['USDT', '1500'],
+      ['BTC', '2000'],
+      ['ETH', '500'],
+    ])
+  })
+
+  test('one stale pair makes only that asset unvaluable and flags the total incomplete', () => {
+    const ETH = 'okx:SPOT:ETH/USDT'
+    const v = computeValuation(
+      input({
+        balances: [
+          { asset: 'USDT', available: '100', locked: '0' },
+          { asset: 'BTC', available: '1', locked: '0' },
+          { asset: 'ETH', available: '2', locked: '0' },
+        ],
+        positions: [],
+        bids: {
+          [BTC]: { price: '1000', receivedTsMs: NOW - 100 },
+          [ETH]: { price: '50', receivedTsMs: NOW - MAX_BID_AGE_MS - 1 },
+        },
+      }),
+    )
+    expect(v.totalAssets).toBe('1100')
+    expect(v.incomplete).toBe(true)
+    expect(v.unvaluable.map((a) => a.asset)).toEqual(['ETH'])
   })
 
   test('records the freshest bid time as the valuation time', () => {

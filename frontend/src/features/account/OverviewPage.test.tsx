@@ -9,7 +9,7 @@ import type { Snapshot } from '@/shared/api/schemas'
 const INSTRUMENT = 'okx:SPOT:BTC/USDT'
 const NOW = 1_700_000_000_000
 
-function snapshot(balances: Snapshot['balances']): Snapshot {
+function snapshot(balances: Snapshot['balances'], pnl?: Snapshot['pnl']): Snapshot {
   return {
     environment_id: 'e',
     account_id: 'a',
@@ -19,8 +19,19 @@ function snapshot(balances: Snapshot['balances']): Snapshot {
     orders: [],
     executions: [],
     positions: [],
+    pnl,
   } as unknown as Snapshot
 }
+
+const pnlOf = (instruments: Array<[string, string, string]>): Snapshot['pnl'] => ({
+  status: 'AVAILABLE',
+  instruments: instruments.map(([instrument_id, quote_asset, realized_pnl]) => ({
+    instrument_id,
+    quote_asset,
+    realized_pnl,
+    cumulative_fees: '0',
+  })),
+})
 
 function book(receivedTsMs: number) {
   useMarketStore.getState().applyMarketEvent({
@@ -106,5 +117,81 @@ describe('OverviewPage', () => {
     } as never)
     renderPage()
     expect(screen.getByTestId('unvaluable')).toBeVisible()
+  })
+
+  test('closed position still shows the lifetime realized PnL from the backend', () => {
+    useTradingStore
+      .getState()
+      .applySnapshot(
+        snapshot([{ asset: 'USDT', available: '10009.79', locked: '0' }], pnlOf([[INSTRUMENT, 'USDT', '9.79']])),
+      )
+    renderPage()
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('9.79 USDT')
+  })
+
+  test('a new account shows a legitimate zero, a loss shows a negative number', () => {
+    useTradingStore.getState().applySnapshot(snapshot([{ asset: 'USDT', available: '10000', locked: '0' }], pnlOf([])))
+    const view = renderPage()
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/^0$/)
+    view.unmount()
+    useTradingStore
+      .getState()
+      .applySnapshot(snapshot([{ asset: 'USDT', available: '9990', locked: '0' }], pnlOf([[INSTRUMENT, 'USDT', '-10.19']])))
+    renderPage()
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('-10.19 USDT')
+  })
+
+  test('currencies are shown separately and unavailable PnL is "--" not 0', () => {
+    useTradingStore.getState().applySnapshot(
+      snapshot(
+        [{ asset: 'USDT', available: '1', locked: '0' }],
+        pnlOf([
+          [INSTRUMENT, 'USDT', '4'],
+          ['okx:SPOT:BTC/JPY', 'JPY', '-1000'],
+        ]),
+      ),
+    )
+    const view = renderPage()
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('4 USDT · -1000 JPY')
+    view.unmount()
+    useTradingStore.getState().applySnapshot(
+      snapshot([{ asset: 'USDT', available: '1', locked: '0' }], { status: 'UNAVAILABLE', reason: 'x' }),
+    )
+    renderPage()
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('--')
+  })
+
+  test('BTC and ETH held together are both valued from their own valid bids', () => {
+    useTradingStore.getState().applySnapshot(
+      snapshot(
+        [
+          { asset: 'USDT', available: '100', locked: '50' },
+          { asset: 'BTC', available: '1', locked: '0' },
+          { asset: 'ETH', available: '10', locked: '0' },
+        ],
+        pnlOf([]),
+      ),
+    )
+    book(NOW - 100)
+    useMarketStore.getState().applyMarketEvent({
+      protocol_version: '1.0.0',
+      type: 'market.order_book',
+      environment_id: 'e',
+      stream_id: 's',
+      stream_sequence: 3,
+      event_id: 'b-eth',
+      event_ts_ms: NOW - 100,
+      published_ts_ms: NOW - 100,
+      payload: {
+        bids: [{ price: '50', quantity: '9' }],
+        asks: [{ price: '51', quantity: '9' }],
+        sequence_id: '2',
+        received_ts_ms: NOW - 100,
+      },
+      instrument_id: 'okx:SPOT:ETH/USDT',
+    } as never)
+    renderPage()
+    expect(screen.getByTestId('total-assets')).toHaveTextContent('1650 USDT') // 150 + 1000 + 500
+    expect(screen.queryByTestId('valuation-incomplete')).toBeNull()
   })
 })

@@ -41,6 +41,18 @@ describe('EnvironmentGate', () => {
     const user = userEvent.setup()
     const envCalls: { key: string; body: unknown }[] = []
     server.use(
+      http.get('*/api/v1/market/instruments', () =>
+        HttpResponse.json({
+          feed_enabled: true,
+          items: ['BTC', 'ETH'].map((base) => ({
+            instrument_id: `okx:SPOT:${base}/USDT`,
+            exchange_id: 'okx',
+            market_type: 'SPOT',
+            base_asset: base,
+            quote_asset: 'USDT',
+          })),
+        }),
+      ),
       http.post('*/api/v1/environments', ({ request }) => {
         envCalls.push({
           key: request.headers.get('Idempotency-Key') ?? '',
@@ -80,8 +92,23 @@ describe('EnvironmentGate', () => {
       })
     })
     expect(envCalls[0].key).toMatch(/^[0-9a-f-]{36}$/)
-    expect(gateway.start).toHaveBeenCalledWith('env-new', 'a-new', ['okx:SPOT:BTC/USDT'])
+    // Subscriptions follow the backend's real feed list, not the open page.
+    await vi.waitFor(() =>
+      expect(gateway.start).toHaveBeenCalledWith('env-new', 'a-new', [
+        'okx:SPOT:BTC/USDT',
+        'okx:SPOT:ETH/USDT',
+      ]),
+    )
     expect(screen.getByText('受保护的页面内容')).toBeInTheDocument()
+  })
+
+  test('falls back to the documented single pair only when the instrument list fails', async () => {
+    server.use(http.get('*/api/v1/market/instruments', () => HttpResponse.error()))
+    useSessionStore.getState().setSession({ environmentId: 'env-1', accountId: 'a-1' })
+    renderGate()
+    await vi.waitFor(() =>
+      expect(gateway.start).toHaveBeenCalledWith('env-1', 'a-1', ['okx:SPOT:BTC/USDT']),
+    )
   })
 
   test('reset clears the session and stops the gateway', async () => {

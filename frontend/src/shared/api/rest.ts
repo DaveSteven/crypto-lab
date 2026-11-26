@@ -4,6 +4,7 @@ import type {
   CandleHistoryResponse,
   Environment,
   ExecutionRecord,
+  MarketInstruments,
   PaperOrder,
   Position,
   Snapshot,
@@ -16,6 +17,7 @@ import {
   CandleHistoryResponse as CandleHistorySchema,
   Environment as EnvironmentSchema,
   ExecutionRecord as ExecutionRecordSchema,
+  MarketInstruments as MarketInstrumentsSchema,
   PaperOrder as PaperOrderSchema,
   Position as PositionSchema,
   Snapshot as SnapshotSchema,
@@ -186,6 +188,12 @@ export class RestClient {
       `/api/v1/environments/${environmentId}/executions/${executionId}`,
     )
     return ExecutionRecordSchema.parse(body)
+  }
+
+  /** Instruments actually connected to the shared market feed. */
+  async marketInstruments(): Promise<MarketInstruments> {
+    const body = await this.request('GET', '/api/v1/market/instruments')
+    return MarketInstrumentsSchema.parse(body)
   }
 
   /** Consistency snapshot for the docs/10 §8.1 resync flow. */

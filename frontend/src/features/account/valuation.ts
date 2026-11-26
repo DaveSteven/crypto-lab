@@ -15,6 +15,8 @@ export interface ValuationInput {
   balances: AssetBalance[]
   positions: Position[]
   executions: ExecutionRecord[]
+  /** Lifetime realized PnL per currency from the backend, or null when unavailable/unknown. */
+  realizedByCurrency: Record<string, string> | null
   /** Best bid per instrument, only when the market quality is VALID. */
   bids: Record<string, BidQuote | undefined>
   nowMs: number
@@ -50,7 +52,8 @@ export interface Valuation {
   assets: AssetValue[]
   unvaluable: AssetValue[]
   positions: PositionValue[]
-  realizedPnl: string | null
+  /** Backend lifetime realized PnL per settlement currency; null = unavailable (never 0). */
+  realizedByCurrency: Record<string, string> | null
   unrealizedPnl: string | null
   feesByAsset: { asset: string; amount: string }[]
   valuationTsMs: number | null
@@ -114,12 +117,6 @@ export function computeValuation(input: ValuationInput): Valuation {
       }
     })
 
-  // Closed positions leave the backend projection, so realized PnL from fully
-  // closed trades is not recoverable here; never present a partial sum as total.
-  const hasFillsWithoutPositions = input.executions.length > 0 && input.positions.length === 0
-  const realizedPnl = hasFillsWithoutPositions
-    ? null
-    : input.positions.reduce((sum, position) => sum.plus(position.realized_pnl), new Decimal(0)).toString()
   const unrealizedPnl = positions.some((p) => p.unrealizedPnl === null)
     ? null
     : positions.reduce((sum, p) => sum.plus(p.unrealizedPnl ?? 0), new Decimal(0)).toString()
@@ -141,7 +138,7 @@ export function computeValuation(input: ValuationInput): Valuation {
     assets: withShare.filter((asset) => asset.value !== null),
     unvaluable,
     positions,
-    realizedPnl,
+    realizedByCurrency: input.realizedByCurrency,
     unrealizedPnl,
     feesByAsset: [...fees].map(([asset, amount]) => ({ asset, amount: amount.toString() })),
     valuationTsMs,

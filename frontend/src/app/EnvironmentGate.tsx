@@ -7,6 +7,9 @@ import { RestClient } from '@/shared/api/rest'
 
 const rest = new RestClient()
 
+/** Used only when the instrument list cannot be fetched; the documented single-pair default. */
+const FALLBACK_INSTRUMENTS = ['okx:SPOT:BTC/USDT']
+
 /**
  * Session bootstrap: create (or reuse) the local simulation environment and
  * paper account, then start the shared realtime gateway. Order intent only —
@@ -28,8 +31,20 @@ export function EnvironmentGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!active || session === null) return
-    gateway.start(session.environmentId, session.accountId, ['okx:SPOT:BTC/USDT'])
-    return () => gateway.stop()
+    // Subscribe to every instrument the backend actually feeds (not to whatever
+    // page is open) so Overview valuation never depends on the Trading page.
+    let cancelled = false
+    void rest
+      .marketInstruments()
+      .then((result) => result.items.map((item) => item.instrument_id))
+      .catch(() => FALLBACK_INSTRUMENTS)
+      .then((instruments) => {
+        if (!cancelled) gateway.start(session.environmentId, session.accountId, instruments)
+      })
+    return () => {
+      cancelled = true
+      gateway.stop()
+    }
   }, [active, session])
 
   if (active && session !== null) {

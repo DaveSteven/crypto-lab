@@ -1,8 +1,20 @@
 import { create } from 'zustand'
+import Decimal from 'decimal.js'
 import type { Snapshot, TradingEvent } from '@/shared/api/schemas'
 import type { TradingStateSink } from '@/shared/api/sync'
 
+/** Lifetime realized PnL view kept consistent with the snapshot and positions events. */
+export interface PnlView {
+  /** UNKNOWN: no snapshot yet (or an older backend without pnl). Never rendered as zero. */
+  status: 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN'
+  reason?: string
+  instruments: Record<string, { quote_asset: string; realized_pnl: string; cumulative_fees: string }>
+}
+
+const UNKNOWN_PNL: PnlView = { status: 'UNKNOWN', instruments: {} }
+
 interface TradingState {
+  pnl: PnlView
   stateVersion: number
   balances: Snapshot['balances']
   orders: Snapshot['orders']
@@ -37,8 +49,16 @@ export const useTradingStore = create<TradingStore>()((set) => ({
   orders: [],
   executions: [],
   positions: [],
+  pnl: UNKNOWN_PNL,
   reset: () =>
-    set({ stateVersion: 0, balances: [], orders: [], executions: [], positions: [] }),
+    set({
+      stateVersion: 0,
+      balances: [],
+      orders: [],
+      executions: [],
+      positions: [],
+      pnl: UNKNOWN_PNL,
+    }),
   applySnapshot: (snapshot) =>
     set({
       stateVersion: snapshot.state_version,
@@ -46,6 +66,24 @@ export const useTradingStore = create<TradingStore>()((set) => ({
       orders: snapshot.orders,
       executions: snapshot.executions,
       positions: snapshot.positions,
+      pnl:
+        snapshot.pnl === undefined
+          ? UNKNOWN_PNL
+          : snapshot.pnl.status === 'AVAILABLE'
+            ? {
+                status: 'AVAILABLE',
+                instruments: Object.fromEntries(
+                  (snapshot.pnl.instruments ?? []).map((item) => [
+                    item.instrument_id,
+                    {
+                      quote_asset: item.quote_asset,
+                      realized_pnl: item.realized_pnl,
+                      cumulative_fees: item.cumulative_fees,
+                    },
+                  ]),
+                ),
+              }
+            : { status: 'UNAVAILABLE', reason: snapshot.pnl.reason, instruments: {} },
     }),
   applyEvent: (event: TradingEvent) =>
     set((state) => {
@@ -70,13 +108,40 @@ export const useTradingStore = create<TradingStore>()((set) => ({
           const position = payload as unknown as Snapshot['positions'][number]
           const positions = upsertById(state.positions, position, (item) => item.instrument_id)
           // A fully closed position must leave the projection.
-          const open = position.quantity === '0' || position.quantity === '0.0'
+          const open = new Decimal(position.quantity).isZero()
             ? positions.filter((item) => item.instrument_id !== position.instrument_id)
             : positions
-          return { positions: open, stateVersion: event.state_version ?? state.stateVersion }
+          // The event carries the cumulative per-instrument PnL even for a fully
+          // closed position, so lifetime realized PnL survives the close.
+          const quoteAsset = (position as { quote_asset?: string }).quote_asset
+          const pnl: PnlView =
+            state.pnl.status === 'AVAILABLE' && quoteAsset !== undefined
+              ? {
+                  ...state.pnl,
+                  instruments: {
+                    ...state.pnl.instruments,
+                    [position.instrument_id]: {
+                      quote_asset: quoteAsset,
+                      realized_pnl: position.realized_pnl,
+                      cumulative_fees: position.cumulative_fees,
+                    },
+                  },
+                }
+              : state.pnl
+          return { positions: open, pnl, stateVersion: event.state_version ?? state.stateVersion }
         }
         default:
           return state
       }
     }),
 }))
+
+/** Lifetime realized PnL per settlement currency; null unless the backend reported AVAILABLE. */
+export function realizedPnlByCurrency(pnl: PnlView): Record<string, string> | null {
+  if (pnl.status !== 'AVAILABLE') return null
+  const totals: Record<string, Decimal> = {}
+  for (const item of Object.values(pnl.instruments)) {
+    totals[item.quote_asset] = (totals[item.quote_asset] ?? new Decimal(0)).plus(item.realized_pnl)
+  }
+  return Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, v.toFixed()]))
+}

@@ -243,13 +243,24 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] 账户页余额与持仓（Ledger/Fill History 投影）。
 - [x] Overview 页 `/overview`（§15，顶栏新增“总览”入口）：总资产/可用/冻结/已实现/未实现盈亏/累计手续费（按手续费币种分列）、资产分布、当前持仓（市值与未实现盈亏）、最近 5 笔模拟成交；明确标注估值币种 USDT、估值依据与数据时间；无收益曲线。
 - 估值规则（落实 Gate A 决策：有效 Bid，非 Last）：币种按“有效买一价 × 数量”（Decimal）；仅在行情质量 VALID 且买一价不早于 5 秒（对齐后端 max_book_age）时估值；无买一价/已过期/无行情对（如 ETH）的资产单独列为“无法估值资产”，总资产标注“不完整”且不含它们；行情失效时不把旧估值当实时显示，未实现盈亏显示 `--`。
-- 已知限制：已实现盈亏仅汇总当前仍在持仓投影中的记录，完全平仓的持仓后端不保留，此时显示 `--` 而非不完整的数字（需后端提供累计已实现盈亏后才能完整展示）；总资产估值仅覆盖 BTC/USDT 一个行情对。
+- 已知限制（已由 Task 1.12.10-A 解决）：原已实现盈亏仅汇总当前持仓投影；现改用后端累计值。总资产估值覆盖范围见下。
 - 验证：vitest 103 项、tsc、build 通过；真实环境浏览器复查 `/overview`（BTC 市值 + USDT = 总资产，核对一致）。
 
 ##### Task 1.12.11 — Markets & Settings
 
 - [ ] Markets 页（已接入品种、质量列、点击进入 Trading）。
 - [ ] Settings 页（环境/账户/工作区/系统状态，§17）、环境选择器进顶栏、Query 缓存环境隔离。
+
+##### Task 1.12.10-A — Account Realized PnL & Valuation Completion（2026-11-26，等待验收）
+
+- **累计已实现盈亏方案**：以完整 Fill History 为唯一权威，读取时用既有 `PortfolioEngine`（移动平均成本法；买入手续费计入成本，卖出手续费冲减盈亏，每笔手续费只计一次）重放（`realized_pnl_summary`）；不新增持久化表、无第二套权威；完全平仓的盈亏保留，零数量持仓仍不入投影；按结算币种分别汇总，绝不跨币种相加；历史账户无需迁移（读取即得）；O(成交数)，规模变大后再引入可重建缓存。
+- **API**：`GET /accounts/{id}/pnl`；Snapshot 新增同结构 `pnl`；字段 `cumulative_realized_pnl_by_currency`、`cumulative_fees_by_currency`、`instruments`、`state_version`、`as_of_ts_ms`、`scope`、`cost_method`、`status`；无成交 = `AVAILABLE` + 空对象（合法 0）；重放失败 = `UNAVAILABLE` + 原因，不以 0 掩盖。Snapshot 读取改为 `REPEATABLE READ`，PnL 与订单/成交/余额/持仓同版本。新增 `GET /api/v1/market/instruments`。见 docs/09 §4.3.1。
+- **前端**：`tradingStore.pnl` 来自 Snapshot，并由 `positions` WS 事件（含已平仓品种的累计值）增量更新，REST Resync 后以 Snapshot 为准；Overview 显示累计已实现盈亏（多币种分列、负数、新账户 0、不可用 `--`），不再汇总当前持仓。
+- **估值审计（ETH 无法估值的实际原因）**：(1) Feed 默认品种配置仅 `BTC/USDT`（ADR 0007 原决定；`CRYPTO_LAB_FEED_INSTRUMENTS` 默认值），ETH/USDT 从未接入，没有 ETH 订单簿；(2) 前端 `EnvironmentGate` 硬编码仅订阅 `BTC/USDT`；(3) Dispatcher 使用单一静态 BTC 规则，直接接入 ETH 会用错 tick/lot（ETH-USDT 实测 tickSz 0.01 / lotSz 0.000001 / minSz 0.0001，BTC 为 0.1 / 0.00000001 / 0.00001）；(4) Market State/订单簿质量/REST/WS 订阅链路本身无问题，ETH 订单簿在接入后质量 VALID（真实 OKX 验证 BTC 与 ETH 各约 100 次有效快照）。Overview 的估值数据本就来自全局 market store，不依赖 Trading 页面所选品种，但数据只来自被订阅的品种。**与负责人此前认知的差异**：默认 Feed 品种在 ADR 0007 中一直是仅 BTC/USDT，BTC/USDT 与 ETH/USDT 是 docs/12 §8 的 UI 初始品种，并非已配置的 Feed 默认。
+- **修复**：Feed 默认品种改为 BTC/USDT、ETH/USDT（`DEFAULT_INSTRUMENTS`），规则按品种 `OKX_SPOT_RULES`（均对照 OKX 公共 instruments 端点 Verified）且缺少规则时拒绝启动；前端订阅集合来自 `/api/v1/market/instruments`（失败才回退 BTC）。估值规则不变：仅用有效 Bid、行情过期/失效即“无法估值”、总资产不完整时明确标记、冻结资产按 可用+冻结 计入且只计一次、不使用虚假汇率。
+- **审计中发现并修复的缺陷**：`run_due` 在工作线程中执行，Feed 同时更新订单簿；决策时间之后到达的订单簿会触发 no-lookahead 门，使有效订单被误拒为 `MARKET_DATA_UNAVAILABLE`（真实环境 ETH 订单被误拒，加入第二个品种后更易触发）。修复：run 开始时先快照订单簿再取决策时间，并有回归测试。
+- **验证**：后端 pytest 342 通过、0 跳过（含 PostgreSQL，复用 `crypto-lab-task111-test` 的 `crypto_lab_test` 库；不触碰 `crypto_lab_verify`/开发数据）；`ruff` 全部通过；前端 vitest 116 通过（保留原 103 项基线）、`tsc`、`build` 通过。真实环境 Overview 截图：`docs/screenshots/1.12.10-A-overview-btc-eth-closed-pnl.jpg`（BTC 已平仓累计 -1.491181 USDT，持有 BTC+ETH，总资产 9996.37528 = 可用 7925.89928 + BTC 1219.066 + ETH 851.41，冻结 0）。
+- **未做**：历史收益曲线、Sharpe、最大回撤、胜率、风险分析（按范围排除）；估值覆盖仅 Feed 已接入的品种（BTC、ETH 对 USDT）；ETH 暂无交易页入口（交易页仍只含 BTC/USDT）。
 
 #### Gate E — Frontend Acceptance
 
