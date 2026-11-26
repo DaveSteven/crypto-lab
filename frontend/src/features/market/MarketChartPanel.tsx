@@ -23,6 +23,7 @@ import {
   toVolumeData,
   type CandleBar,
 } from './candles'
+import { change24h } from './ticker'
 import { Badge, Button } from '@/shared/ui'
 
 export const INSTRUMENT = 'okx:SPOT:BTC/USDT'
@@ -238,6 +239,17 @@ export function MarketChartPanel() {
         <span className="numeric text-xs text-ink-secondary">
           Bid {ticker?.ticker.bid ?? '—'} / Ask {ticker?.ticker.ask ?? '—'}
         </span>
+        {(() => {
+          const change = change24h(ticker?.ticker.last, ticker?.ticker.open_24h)
+          if (change === null) return <span className="numeric text-xs text-ink-muted">24H 涨跌 --</span>
+          const up = !change.percent.startsWith('-')
+          return (
+            <span className={`numeric text-xs ${up ? 'text-positive' : 'text-negative'}`}>
+              24H {up ? '+' : ''}
+              {change.percent}%
+            </span>
+          )
+        })()}
         <span className="numeric text-xs text-ink-muted">
           24H 高 {ticker?.ticker.high_24h ?? '--'} · 24H 低 {ticker?.ticker.low_24h ?? '--'} · 24H
           量 {ticker?.ticker.base_volume_24h ?? '--'}

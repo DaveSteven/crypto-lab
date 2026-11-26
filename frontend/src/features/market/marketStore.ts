@@ -1,7 +1,17 @@
 import { create } from 'zustand'
 import { barFromPayload, candleKey, mergeCandlePage, upsertCandle, type CandleBar } from '@/features/market/candles'
 import type { MarketEvent, Ticker } from '@/shared/api/schemas'
-import { Ticker as TickerSchema } from '@/shared/api/schemas'
+import { Ticker as TickerSchema, Trade as TradeSchema } from '@/shared/api/schemas'
+
+export const MAX_TRADES = 50
+
+export interface TradeView {
+  tradeId: string
+  price: string
+  quantity: string
+  side: 'BUY' | 'SELL'
+  eventTsMs: number
+}
 
 export interface TickerView {
   ticker: Ticker
@@ -27,6 +37,7 @@ interface MarketState {
   tickers: Record<string, TickerView>
   quality: Record<string, QualityView>
   orderBooks: Record<string, OrderBookView>
+  trades: Record<string, TradeView[]>
   candleSubscriptionError: string | null
   setCandleSubscriptionError: (message: string | null) => void
   seedCandles: (instrumentId: string, interval: string, bars: CandleBar[]) => void
@@ -39,10 +50,11 @@ export const useMarketStore = create<MarketState>()((set) => ({
   tickers: {},
   quality: {},
   orderBooks: {},
+  trades: {},
   candleSubscriptionError: null,
   setCandleSubscriptionError: (message) => set({ candleSubscriptionError: message }),
   reset: () =>
-    set({ candles: {}, tickers: {}, quality: {}, orderBooks: {}, candleSubscriptionError: null }),
+    set({ candles: {}, tickers: {}, quality: {}, orderBooks: {}, trades: {}, candleSubscriptionError: null }),
 
   seedCandles: (instrumentId, interval, bars) =>
     set((state) => {
@@ -99,6 +111,23 @@ export const useMarketStore = create<MarketState>()((set) => ({
                 eventTsMs: message.event_ts_ms,
               },
             },
+          }
+        }
+        case 'market.trade': {
+          const parsed = TradeSchema.safeParse(message.payload)
+          if (!parsed.success) return state
+          const existing = state.trades[instrument] ?? []
+          // Duplicate trade ids (replay/resync) never create duplicate rows.
+          if (existing.some((trade) => trade.tradeId === parsed.data.trade_id)) return state
+          const next: TradeView = {
+            tradeId: parsed.data.trade_id,
+            price: parsed.data.price,
+            quantity: parsed.data.quantity,
+            side: parsed.data.side,
+            eventTsMs: message.event_ts_ms,
+          }
+          return {
+            trades: { ...state.trades, [instrument]: [next, ...existing].slice(0, MAX_TRADES) },
           }
         }
         case 'market.order_book': {

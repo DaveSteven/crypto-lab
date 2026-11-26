@@ -213,10 +213,11 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ##### Task 1.12.7 — Market Workspace
 
-- [ ] 三栏 Resizable Panels（react-resizable-panels）+ 底部 Activity Panel + 布局持久化（版本化 LocalStorage）。
-- [ ] Market Header（§8：24H 统计以后端实际字段为准，缺失显示 --）。
-- [ ] Order Book / Market Trades Tab 面板（深度条、Spread、点击价格填入限价）。
-- [ ] 底部状态栏（§6.3）。
+- [x] 三栏 Resizable Panels + 底部 Activity Panel + 布局持久化（1.12.3 已交付）。
+- [x] Market Header（§8）：最新价、Bid/Ask、24H 涨跌（由交易所 last 与 open_24h 派生，缺失显示 --）、24H 高/低/量、质量徽标。交易对选择器暂不提供：Feed 当前只配置 BTC/USDT，不构造不存在的品种。
+- [x] Order Book / Market Trades Tab 面板：累计深度条、Spread（交叉或单边盘口不显示）、点击价格填入限价（自动切换为限价单，不自动下单）、行情非 VALID 时提示且禁止取价；最新成交有界 50 条并按 trade_id 去重；面板自订阅 store 切片。
+- [x] 底部状态栏（1.12.3 已交付）。
+- 验证：vitest 75 项、tsc、build 通过；真实 OKX 行情 + 浏览器 1440×900 复查订单簿、最新成交、点击填价通过。未做：ETH/USDT 等多品种；行情失效态的真实触发。
 
 ##### Task 1.12.8 — Order Entry
 

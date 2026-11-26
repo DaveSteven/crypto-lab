@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { MarketDepthPanel } from '@/features/market/MarketDepthPanel'
 import { MarketChartPanel } from '@/features/market/MarketChartPanel'
 import { OrderEntryPanel } from '@/features/trading/OrderEntryPanel'
 import { OrdersTable } from '@/features/trading/OrdersTable'
 import { ExecutionsTable } from '@/features/trading/ExecutionsTable'
 import { AccountPanel } from '@/features/account/AccountPanel'
-import { Badge, EmptyState, Tabs } from '@/shared/ui'
+import { Tabs } from '@/shared/ui'
 
 /**
  * Trading workspace (docs/12 §7): three-column resizable area over a
@@ -44,20 +45,7 @@ export function TradingWorkspace() {
             </Panel>
             <PanelResizeHandle className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
             <Panel defaultSize={21} minSize={16}>
-              {/* Order Book / Market Trades tabs arrive with Task 1.12.7;
-                  the empty state is deliberate (docs/12 §5.2, §22). */}
-              <section
-                aria-label="订单簿与最新成交"
-                className="flex h-full flex-col overflow-hidden rounded-[4px] border border-line bg-surface"
-              >
-                <header className="flex h-9 shrink-0 items-center border-b border-line px-3">
-                  <span className="text-sm font-medium text-ink">订单簿</span>
-                  <Badge tone="neutral" className="ml-2">
-                    1.12.7
-                  </Badge>
-                </header>
-                <EmptyState message="订单簿面板将在 Task 1.12.7 接入（数据通道已就绪）。" />
-              </section>
+              <MarketDepthPanel />
             </Panel>
             <PanelResizeHandle className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
             <Panel defaultSize={25} minSize={20}>

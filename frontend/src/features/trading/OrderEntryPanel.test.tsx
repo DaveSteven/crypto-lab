@@ -7,6 +7,8 @@ import { OrderEntryPanel } from './OrderEntryPanel'
 import { useSessionStore } from '@/app/sessionStore'
 import { useMarketStore } from '@/features/market/marketStore'
 import { useConnectionStore } from '@/app/connectionStore'
+import { useOrderDraftStore } from './orderDraftStore'
+import { act } from '@testing-library/react'
 
 const server = setupServer()
 
@@ -113,5 +115,12 @@ describe('OrderEntryPanel', () => {
     render(<OrderEntryPanel />)
     expect(screen.getByRole('alert')).toHaveTextContent('下单已暂停')
     expect(screen.getByRole('button', { name: /提交/ })).toBeDisabled()
+  })
+
+  test('a picked order-book price switches to a LIMIT draft and does not submit', async () => {
+    render(<OrderEntryPanel />)
+    act(() => useOrderDraftStore.getState().pickPrice('61000.5'))
+    expect(await screen.findByDisplayValue('61000.5')).toBeVisible()
+    expect(screen.getByRole('button', { name: '限价' })).toBeVisible()
   })
 })

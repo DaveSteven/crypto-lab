@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useOrderDraftStore } from './orderDraftStore'
 import { ApiError } from '@/shared/api/rest'
 import { rest } from '@/shared/api/client'
 import { useConnectionStore, connectionDisplay } from '@/app/connectionStore'
@@ -41,6 +42,13 @@ export function OrderEntryPanel() {
   const marketOk = (quality?.status ?? 'VALID') === 'VALID'
   const connected = display !== 'offline'
   const tradable = marketOk && connected
+
+  const pickNonce = useOrderDraftStore((state) => state.pickNonce)
+  useEffect(() => {
+    if (pickNonce === 0) return
+    const price = useOrderDraftStore.getState().pickedPrice
+    if (price !== null) setValues((previous) => ({ ...previous, order_type: 'LIMIT', limit_price: price }))
+  }, [pickNonce])
 
   function update(patch: Partial<OrderFormValues>) {
     setValues((previous) => ({ ...previous, ...patch }))
