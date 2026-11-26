@@ -4,11 +4,11 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.9 |
+| 文档版本 | V1.0 |
 | 当前阶段 | Phase 1 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
-| 状态 | Active |
+| 状态 | Completed / Accepted（2026-11-26） |
 
 ## 1. 目标
 
@@ -34,7 +34,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
 | 1.12 | React 前端应用 | Completed（Gate E Accepted，2026-11-26） |
-| 1.13 | 前后端联调与 Phase 1 验收 | Pending Acceptance |
+| 1.13 | 前后端联调与 Phase 1 验收 | Completed（Accepted，2026-11-26） |
 
 ### Task 1.1 — 模拟账户与资金流水
 
@@ -288,7 +288,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] 对各环境规模比较模拟成交、余额、持仓、流动性消耗历史及事件顺序，确认相同输入产生一致业务结果。
 - [x] 实测确认处理成本近似线性增长；继续接受 Phase 1 Known Limitation，不启动会改变撮合、流动性或事件顺序的专项优化，不引入复杂并行架构。
 
-Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTANCE-REPORT.md)；当前等待项目负责人确认，未预先标记 Completed。
+Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTANCE-REPORT.md)。项目负责人于 2026-11-26 确认 Task 1.13 及 Phase 1 验收通过。
 
 ## 3. Task 1.1 验收标准
 

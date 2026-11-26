@@ -657,5 +657,6 @@ Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现
 - [x] 完成 Phase 1 Task 1.10 后端服务与 REST API。
 - [x] 完成 Phase 1 Task 1.11 实时行情服务。
 - [x] 完成 Phase 1 Task 1.12 React 前端应用。
-- [ ] 确认 Phase 1 Task 1.13 及 Phase 1 最终验收（自动验收已完成，待项目负责人确认）。
+- [x] 完成 Phase 1 Task 1.13 前后端联调与最终验收（Accepted，2026-11-26）。
+- [x] Phase 1 最终验收通过（Phase 0-B 独立长期研究仍为 Pending）。
 
