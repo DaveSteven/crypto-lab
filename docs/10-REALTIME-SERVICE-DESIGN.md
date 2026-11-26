@@ -4,9 +4,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 对应任务 | Phase 1 Task 1.11 |
-| 状态 | Proposed / Awaiting Confirmation |
+| 状态 | Accepted / Implementation Active |
 | 传输 | FastAPI WebSocket |
 
 ## 1. 目标与边界
@@ -37,7 +37,9 @@ Subprotocol: crypto-lab.v1
   "protocol_version": "1.0.0",
   "type": "market.ticker",
   "environment_id": "env_...",
+  "stream_id": "01J...",
   "stream_sequence": 42,
+  "delivery_sequence": 17,
   "event_id": "...",
   "event_ts_ms": 1000,
   "published_ts_ms": 1002,
@@ -48,7 +50,9 @@ Subprotocol: crypto-lab.v1
 约束：
 
 - Decimal 继续使用字符串，时间使用 UTC Epoch Milliseconds。
-- `stream_sequence` 在单环境、单进程生命周期内严格递增，用于检测缺口，不作为持久业务 ID。
+- `stream_id` 标识当前进程内的环境事件流；服务重启后变化，旧值不得恢复。
+- `stream_sequence` 是 Environment Hub 发布顺序和 Replay 游标。订阅过滤或行情合并造成的缺口是正常现象，客户端不得据此判断丢失。
+- `delivery_sequence` 在连接实际发送业务消息时连续递增；只有它的缺口才表示该连接交付异常。控制消息和 Heartbeat 不消耗该序列。
 - `event_id` 保留 Canonical 行情事件或模拟事件身份。
 - 未提供的值使用 `null`，不得用 0 或本地时间伪造。
 - 客户端不得通过 WebSocket 提交或取消订单；写操作继续使用 REST 幂等接口。
@@ -74,7 +78,7 @@ Subprotocol: crypto-lab.v1
 
 - `unsubscribe` 使用与订阅相同的过滤器。
 - 客户端 `ping` 得到服务端 `pong`。
-- 服务端每 15 秒发送 `heartbeat`；45 秒内未收到任意客户端消息则关闭连接。
+- 服务端每 15 秒发送应用层 `heartbeat`，客户端收到后发送应用层 `pong` 并回显 heartbeat ID；客户端也可发送 `ping` 获取 `pong`。45 秒内未收到任意客户端消息则关闭连接。浏览器不依赖直接发送协议层 Ping Frame。
 - 心跳时间为连接健康指标，不得解释为交易所网络延迟。
 
 ## 5. Topic
@@ -99,9 +103,11 @@ Subprotocol: crypto-lab.v1
 
 - 行情事件只有经过 Adapter 校验及顺序处理后才能发布。
 - 模拟交易事件只在数据库事务成功提交后发布，禁止广播可能回滚的中间状态。
+- 同一事务事件共享 `transaction_id` 与 `state_version`，并使用从 0 开始的确定性 `event_index`。
 - Account Ledger、Order State、Fill History 和 Portfolio 仍是权威来源；WebSocket 只是通知通道。
 - 同一业务事件生成稳定 `event_id`，重复发布不应导致客户端重复应用。
 - 客户端发现序列缺口、收到 `resync.required` 或重连后，必须用 REST 重新读取订单、余额、持仓及成交。
+- 发布失败不回滚已提交事务；Hub 记录失败并使相关连接 Resync。进程在提交后、发布前退出可能丢失通知，这是无 Outbox 的已知限制。
 
 ## 7. 背压与有界内存
 
@@ -113,16 +119,25 @@ Subprotocol: crypto-lab.v1
 - 记录连接数、队列高水位、合并数、丢弃数、关闭码和原因；禁止逐条输出高频行情日志。
 - 全局连接数、每环境连接数、订阅数、消息大小及发送超时均需配置上限。
 
+初始可配置合并窗口：Ticker 100ms、有效 OrderBook Snapshot 200ms、未闭合 Candle 200ms。Trade 使用有界批次且不可静默丢弃；Quality 仅在状态变化时发布；交易状态立即发布。合并键至少包含 Topic、Instrument，Candle 还包含 interval 与 open_ts_ms。已闭合 Candle、Quality 失效/恢复及任何交易事件不可合并丢失。前端节流后的事件绝不回流撮合或行情状态引擎。
+
 ## 8. 重连与恢复
 
-Phase 1 不承诺进程重启后的 WebSocket Event Replay。连接内保留小型有界 Ring Buffer（建议 1000 条或 60 秒，以先达到者为准）：
+Phase 1 不承诺进程重启后的 WebSocket Event Replay。每个 Environment Event Hub 拥有 Ring Buffer，默认 1000 条或 60 秒（先达到者为准），并设所有 Hub 的全局事件及字节上限：
 
-- 客户端可在首次消息中提供 `resume_after_sequence`。
+- 客户端可在首次订阅中提供 `resume_from: {stream_id, stream_sequence}`。
 - 缓冲仍覆盖该序列时按原顺序重放。
 - 无法覆盖、环境不匹配或进程已重启时发送 `resync.required`。
+- Replay 使用当前订阅过滤，账户事件必须匹配 account_id。Replay 固定上界并暂存新的 Live Event，重放后无缝发送暂存事件，以 event_id 去重。
 - REST 快照完成后，客户端重新订阅并从新的 `session.ready` 序列继续。
 
 持久化 Outbox、跨进程广播和长期 Replay 属于后续增强，不在 Task 1.11 引入。
+
+### 8.1 REST Snapshot 一致性
+
+新增 `GET /api/v1/environments/{environment_id}/snapshot?account_id=...`。Environment 持久化单调 `state_version`；每次改变 Order、Execution、Ledger、Balance 或 Portfolio 的事务在同一提交中增加版本，提交后交易事件携带该版本。聚合 Snapshot 在一个只读事务中返回账户、订单、成交、余额、持仓及 `state_version`。
+
+客户端先建立 WebSocket、订阅并缓冲交易事件，再获取 Snapshot 版本 V；丢弃 `state_version <= V` 的已缓冲事件，并按 `state_version`、`event_index` 应用剩余事件。若 stream 失效、delivery 不连续或 Replay 无法证明版本完整，则重新 Resync。行情事件不使用业务版本，而由 Canonical Event、质量状态和 event_id 管理。单纯先读 REST 再连接 WebSocket 不满足一致性要求。
 
 ## 9. 组件设计
 
@@ -176,7 +191,7 @@ Canonical Market / Committed Trading Event
 
 测试使用 TestClient、ManualClock 和可控发布器，不依赖真实交易所网络，不用真实等待验证心跳。
 
-## 12. 待确认事项
+## 12. 已确认事项
 
 1. Endpoint 使用 `/api/v1/ws/environments/{environment_id}`，Subprotocol 为 `crypto-lab.v1`。
 2. 客户端仅订阅和心跳；下单、取消继续使用 REST。
@@ -188,3 +203,5 @@ Canonical Market / Committed Trading Event
 8. 订单簿向浏览器推送当前快照，不推送交易所原始增量。
 9. Candle 只发布真实 Canonical 数据；来源未实现时明确不可用，不合成虚假 K 线。
 10. Task 1.11 仍维持本机无认证边界，不进入 React 或多进程部署。
+
+以上事项已由项目负责人于 2026-11-26 确认。Sequence、Replay、REST Snapshot、发布一致性、节流与 Heartbeat 的补充规则以本版本第 3、4、6、7、8 节为准。
