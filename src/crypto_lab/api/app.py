@@ -6,6 +6,8 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Annotated, Any
@@ -58,21 +60,14 @@ def _environment_exists(service: Any) -> Any:
     return exists
 
 
-def register_existing_environments(dispatcher: Any, service: Any) -> list[str]:
-    """Re-register persisted environments with the dispatcher after a restart.
+def recover_environments(dispatcher: Any, service: Any, recovery_ts_ms: int) -> list[Any]:
+    """Startup recovery: one baseline time for every persisted environment.
 
-    Registration is otherwise only triggered by environment creation, so without
-    this a restarted process would never execute pending scheduled orders or
-    apply market data for environments created before the restart.
+    Expires overdue PENDING_EXECUTION orders, restores the rest and registers the
+    environments. Failures are isolated per environment and exposed through
+    ``dispatcher.recovery_status()``.
     """
-    registered: list[str] = []
-    for environment_id in service.list_environment_ids():
-        try:
-            if dispatcher.register_environment(environment_id):
-                registered.append(environment_id)
-        except Exception:
-            _LOGGER.exception("failed to restore environment %s on startup", environment_id)
-    return registered
+    return dispatcher.restore_environments(service.list_environment_ids(), recovery_ts_ms)
 
 
 def _dispatch_canonical(dispatcher: Any) -> Any:
@@ -97,6 +92,7 @@ def create_app(
     realtime: RealtimeHubRegistry | None = None,
     market_feed: Any | None = None,
     market_feed_settings: MarketFeedSettings | None = None,
+    now_ms: Callable[[], int] | None = None,
 ) -> FastAPI:
     owns_engine = engine is None and service is None
     actual_engine = engine
@@ -121,6 +117,7 @@ def create_app(
             fee_schedule=fee_schedule,
             realtime_publisher=publisher,
             candle_client=OkxCandleClient(),
+            **({"now_ms": now_ms} if now_ms is not None else {}),
         )
         if feed_settings.enabled:
             dispatcher = EnvironmentMarketDispatcher(
@@ -143,22 +140,35 @@ def create_app(
     async def _dispatch_driver() -> None:
         assert dispatcher is not None
         interval = max(feed_settings.dispatch_interval_ms, 50) / 1_000
+        last_retry = time.monotonic()
         while True:
             await asyncio.sleep(interval)
             await asyncio.to_thread(dispatcher.run_due)
+            failed = dispatcher.recovery_status()["failed"]
+            if failed and time.monotonic() - last_retry >= 5.0:
+                last_retry = time.monotonic()
+                # Retry isolated failures with a fresh baseline; never silent.
+                await asyncio.to_thread(
+                    dispatcher.restore_environments, tuple(failed), service.now_ms()
+                )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         publisher.start(asyncio.get_running_loop())
         feed_task = None
         driver_task = None
+        if dispatcher is not None:
+            # Recovery completes before the feed or scheduler can touch any
+            # environment, so start order cannot change financial outcomes.
+            try:
+                await asyncio.to_thread(
+                    recover_environments, dispatcher, service, service.now_ms()
+                )
+            except Exception:
+                _LOGGER.exception("startup recovery could not enumerate environments")
         if actual_market_feed is not None:
             feed_task = asyncio.create_task(actual_market_feed.run())
         if dispatcher is not None:
-            try:
-                await asyncio.to_thread(register_existing_environments, dispatcher, service)
-            except Exception:
-                _LOGGER.exception("failed to list environments for dispatcher restore")
             driver_task = asyncio.create_task(_dispatch_driver())
         yield
         if feed_task is not None:
@@ -217,6 +227,12 @@ def create_app(
     @app.get("/health/live")
     def live() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/recovery")
+    def recovery() -> dict[str, Any]:
+        if dispatcher is None:
+            return {"recovered": [], "failed": {}}
+        return dispatcher.recovery_status()
 
     @app.get("/health/ready")
     def ready() -> JSONResponse:

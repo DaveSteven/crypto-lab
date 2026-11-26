@@ -8,8 +8,8 @@ import json
 import pytest
 
 from crypto_lab.realtime import OkxMarketFeed, RealtimeHubRegistry
-from crypto_lab.realtime.market import MarketRealtimeBridge
 from crypto_lab.realtime.feed import OKX_BUSINESS_WS_URL, SubscriptionLimitError
+from crypto_lab.realtime.market import MarketRealtimeBridge
 
 INSTRUMENT = "okx:SPOT:BTC/USDT"
 

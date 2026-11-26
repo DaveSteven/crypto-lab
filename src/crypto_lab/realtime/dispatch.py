@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import Any
 
 from crypto_lab.market_data import InvalidOrderBookStateError, OrderBookView
@@ -43,6 +44,20 @@ from crypto_lab.trading import (
 from crypto_lab.trading.delayed_execution import ScheduledOrderExecutor
 
 logger = logging.getLogger(__name__)
+
+# Distinguishes orders whose scheduled execution time passed while the service
+# was down from a normal-operation MARKET_DATA_UNAVAILABLE rejection.
+EXECUTION_EXPIRED_ON_RESTART = "EXECUTION_EXPIRED_ON_RESTART"
+
+
+@dataclass(frozen=True)
+class EnvironmentRecovery:
+    """Outcome of restoring one environment at startup."""
+
+    environment_id: str
+    status: str  # RECOVERED | FAILED
+    expired_order_ids: tuple[str, ...] = ()
+    error: str | None = None
 
 
 class LatestBookState:
@@ -121,11 +136,119 @@ class EnvironmentMarketDispatcher:
             "books_synchronized": 0,
             "executions_processed": 0,
             "dispatch_errors": 0,
+            "recovery_failures": 0,
         }
         self._environments: dict[str, dict[str, Any]] = {}
+        # Environments that failed startup recovery: never matched, never silent.
+        self._recovery_failed: dict[str, str] = {}
 
     def environments(self) -> tuple[str, ...]:
         return tuple(self._environments)
+
+    def recovery_status(self) -> dict[str, Any]:
+        """Explicit per-environment recovery state (docs: restart recovery rules)."""
+        return {
+            "recovered": sorted(self._environments),
+            "failed": dict(self._recovery_failed),
+        }
+
+    def restore_environments(
+        self, environment_ids: Iterable[str], recovery_ts_ms: int
+    ) -> list[EnvironmentRecovery]:
+        """Startup recovery against one unified baseline time.
+
+        For each environment, atomically: reject every PENDING_EXECUTION order whose
+        scheduled time is at or before ``recovery_ts_ms`` (reason
+        ``EXECUTION_EXPIRED_ON_RESTART``, reservation released, no fill, no liquidity
+        consumed), leave not-yet-due schedules and resting GTC orders untouched, then
+        register the environment for normal processing. An environment that fails is
+        isolated, recorded in ``recovery_status`` and never matched; it is retried by
+        calling this method again (idempotent).
+        """
+        results: list[EnvironmentRecovery] = []
+        for environment_id in environment_ids:
+            try:
+                expired = self._expire_overdue_orders(environment_id, recovery_ts_ms)
+                if environment_id not in self._environments and not self.register_environment(
+                    environment_id
+                ):
+                    raise RuntimeError("environment could not be registered")
+                self._recovery_failed.pop(environment_id, None)
+                results.append(
+                    EnvironmentRecovery(environment_id, "RECOVERED", tuple(expired))
+                )
+            except Exception as exc:
+                self.stats["recovery_failures"] += 1
+                self._environments.pop(environment_id, None)
+                self._recovery_failed[environment_id] = f"{type(exc).__name__}: {exc}"
+                logger.exception("startup recovery failed for environment %s", environment_id)
+                results.append(
+                    EnvironmentRecovery(
+                        environment_id, "FAILED", error=self._recovery_failed[environment_id]
+                    )
+                )
+        return results
+
+    def _expire_overdue_orders(self, environment_id: str, recovery_ts_ms: int) -> list[str]:
+        expired: list[str] = []
+        with self.transaction(environment_id) as store:
+            groups = store.due_schedule_groups(environment_id, recovery_ts_ms)
+            if not groups:
+                return expired
+            environment = store.load_environment(environment_id)
+            for account_id, _order_ids in groups:
+                ids = store.restore_id_generator(environment_id, environment["id_namespace"])
+                clock = ManualClock(recovery_ts_ms)
+                ledger = store.restore_account_ledger(
+                    account_id=account_id, id_generator=ids, clock=clock
+                )
+                orders = store.restore_orders(ledger, environment_id)
+                scheduler = store.restore_scheduler(
+                    environment_id=environment_id, orders=orders, clock=clock
+                )
+                account_expired: list[str] = []
+
+                def reject_overdue(order: Any, _execution_ts_ms: int, *, _orders: Any = orders,
+                                   _sink: list[str] = account_expired) -> None:
+                    _orders.reject(order.order_id, reason=EXECUTION_EXPIRED_ON_RESTART)
+                    _sink.append(order.order_id)
+
+                scheduler.run_due(reject_overdue)
+                if not account_expired:
+                    continue
+                executions = store.restore_executions(environment_id)
+                projection = PortfolioEngine(executions)
+                store.persist_trading_state(
+                    environment_id=environment_id,
+                    ledger=ledger,
+                    orders=orders,
+                    executions=executions,
+                    portfolio=projection,
+                    scheduler=scheduler,
+                )
+                store.persist_id_generator(environment_id, ids)
+                state_version = store.bump_state_version(environment_id, recovery_ts_ms)
+                store.stage_execution_events(
+                    environment_id=environment_id,
+                    account_id=account_id,
+                    state_version=state_version,
+                    transaction_id=f"recovery:{recovery_ts_ms}:{state_version}",
+                    orders=[
+                        order.model_dump(mode="json")
+                        for order in orders.orders()
+                        if order.order_id in account_expired
+                    ],
+                    balances=[b.model_dump(mode="json") for b in ledger.balances()],
+                    created_ts_ms=recovery_ts_ms,
+                    executions=[],
+                    positions=[
+                        position.model_dump(mode="json")
+                        for position in projection.positions()
+                        if position.account_id == account_id
+                    ],
+                )
+                expired.extend(account_expired)
+        return expired
 
     def register_environment(self, environment_id: str) -> bool:
         """Register an environment and seed it with the current book snapshot."""

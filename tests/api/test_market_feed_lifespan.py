@@ -133,40 +133,24 @@ def test_ws_candle_interval_subscription_drives_feed_refs() -> None:
 
 
 class _FakeDispatcher:
-    def __init__(self, fail_on: str | None = None) -> None:
-        self.registered: list[str] = []
-        self.fail_on = fail_on
+    """Records restore_environments calls; one environment may be made to fail."""
 
-    def register_environment(self, environment_id: str) -> bool:
-        if environment_id == self.fail_on:
-            raise RuntimeError("boom")
-        if environment_id in self.registered:
-            return False
-        self.registered.append(environment_id)
-        return True
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], int]] = []
+
+    def restore_environments(self, environment_ids, recovery_ts_ms):
+        self.calls.append((list(environment_ids), recovery_ts_ms))
+        return ["result"]
 
 
 class _ListingService:
     def list_environment_ids(self) -> list[str]:
-        return ["env-a", "env-b", "env-c"]
+        return ["env-a", "env-b"]
 
 
-def test_restart_restores_persisted_environments_into_dispatcher() -> None:
-    """Regression: pending orders of pre-restart environments were never executed."""
-    from crypto_lab.api.app import register_existing_environments
+def test_recover_environments_uses_one_baseline_for_every_environment() -> None:
+    from crypto_lab.api.app import recover_environments
 
     dispatcher = _FakeDispatcher()
-    assert register_existing_environments(dispatcher, _ListingService()) == [
-        "env-a",
-        "env-b",
-        "env-c",
-    ]
-    # Idempotent: a second pass registers nothing new.
-    assert register_existing_environments(dispatcher, _ListingService()) == []
-
-
-def test_one_broken_environment_does_not_block_the_others() -> None:
-    from crypto_lab.api.app import register_existing_environments
-
-    dispatcher = _FakeDispatcher(fail_on="env-b")
-    assert register_existing_environments(dispatcher, _ListingService()) == ["env-a", "env-c"]
+    assert recover_environments(dispatcher, _ListingService(), 12_345) == ["result"]
+    assert dispatcher.calls == [(["env-a", "env-b"], 12_345)]

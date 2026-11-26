@@ -207,6 +207,18 @@ Fill History 的同步可重建投影：
 
 出现投影差异时默认拒绝启动该环境的交易写入，生成结构化恢复报告；不得静默以投影覆盖权威事实。
 
+### 6.1 服务重启恢复规则（项目负责人确认，2026-11-26）
+
+以统一启动恢复时间 `recovery_ts_ms` 为基准，在 Feed 与 Scheduler 启动**之前**逐环境完成（单环境单事务）：
+
+| 遗留状态 | 处理 |
+|---|---|
+| `PENDING_EXECUTION` 且计划执行时间 ≤ 恢复时间 | 不补执行、不等待行情；转 `REJECTED`，原因 `EXECUTION_EXPIRED_ON_RESTART`；释放全部剩余冻结资金；保留订单与流水；不生成 Fill、不消耗模拟流动性、不写 `executed_ts_ms`。即使重启时已有有效订单簿也不补执行。 |
+| `PENDING_EXECUTION` 且尚未到期 | 保留原计划时间、延迟配置与冻结资金，恢复调度；到期按 Task 1.7/1.8 规则执行。 |
+| `OPEN` / `PARTIALLY_FILLED` GTC 限价单 | 不改动状态、剩余数量与冻结资金；仅依据恢复后的新市场事件继续撮合，不依据停机期间行情补成交；已登记 Trade 经 `processed_market_events` 去重，不重复结算。 |
+
+保证：恢复幂等（无遗留过期订单时不产生流水、事件或 `state_version` 变化）；单个环境恢复失败时事务回滚、该环境不被登记（不撮合、不执行调度）、其余环境不受影响；失败环境记录于 `GET /health/recovery` 的 `failed`，并每 5 秒以新的基准重试。正常运行期间的 `MARKET_DATA_UNAVAILABLE` 与重启过期语义分离。
+
 ## 7. Migration 与测试
 
 - Alembic 初始迁移必须支持 upgrade 和 downgrade。
@@ -238,4 +250,4 @@ Fill History 的同步可重建投影：
 - 写入前拒绝超出 `NUMERIC(50,24)` 的 Decimal，不允许数据库静默舍入。
 - Python Callable 不入库；持久化事件仅保存类型和 JSON Payload，由后续应用层 Dispatcher 恢复处理逻辑。
 - 真实 PostgreSQL 已验证初始 Migration upgrade/downgrade、事务回滚、重复事件、投影重建及恢复一致性。
-
+- 已实现服务重启恢复（6.1）：`EnvironmentMarketDispatcher.restore_environments`、`EXECUTION_EXPIRED_ON_RESTART`、`GET /health/recovery`；8 项真实 PostgreSQL 应用生命周期集成测试（`tests/api/test_restart_recovery_postgres.py`，ManualClock 式可控时间，无外部网络）。
