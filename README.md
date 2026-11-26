@@ -150,6 +150,7 @@ data/             本地实验数据（运行数据不提交 Git）
 - [Phase 1 开发计划](docs/06-PHASE-1-PLAN.md)
 - [REST API 设计](docs/09-REST-API-DESIGN.md)
 - [Phase 1 多环境性能基线](docs/14-PHASE-1-PERFORMANCE-BASELINE.md)
+- [Phase 1 最终验收报告](docs/15-PHASE-1-ACCEPTANCE-REPORT.md)
 
 候选交易所、依赖和接口行为尚待真实验证。未经验证的内容不得标记为已验证结果。
 
