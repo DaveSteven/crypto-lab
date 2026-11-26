@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（Gate A 交付，1.12.1 待验收；详见新划分清单） |
+| 1.12 | React 前端应用 | In Progress（Gate A Accepted；进行中：1.12.3） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -169,14 +169,14 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 #### Gate A — Architecture
 
-##### Task 1.12.1 — Architecture & Design（本轮）
+##### Task 1.12.1 — Architecture & Design（**Gate A Accepted**，2026-11-26）
 
 - [x] 审查 REST Contract、WebSocket Contract、ADR 0006/0007、实际源码及数据模型。
 - [x] docs/12-UI-UX-DESIGN.md V1.1 落盘（Accepted 规范 + Desktop Only 修订）。
-- [x] docs/11 V0.2：Feature-based 架构、API Capability Matrix（S/P/N 全量矩阵）、差距清单 G1～G11。
-- [x] ADR 0008（Proposed）：Candle 多周期动态订阅（引用计数 + 常驻周期），待负责人确认。
-- [x] docs/06 本划分更新。
-- [ ] 负责人审查 Gate A 交付物；确认 ADR 0008 与账户默认延迟扩展方案（docs/11 §7.2）。
+- [x] docs/11 V0.3：Feature-based 架构、API Capability Matrix（S/P/N 全量矩阵）、差距清单 G1～G12。
+- [x] ADR 0008（**Accepted**）：Candle 多周期动态订阅——常驻 1m + 动态引用计数、上限 32 可配置、非常驻频道 30 秒宽限释放；Task 1.12.6 实施。
+- [x] 四项架构决策确认（详见 docs/11 §11）：ADR 0008、账户默认延迟后端持久化、订单预估本地参考估算、持仓估值遵循有效 Bid 语义。
+- [x] Gate A 验收结论：原则上通过；四项决策已回写文档。
 
 #### Gate B — Foundation
 

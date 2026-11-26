@@ -4,9 +4,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.2 |
-| 对应任务 | Phase 1 Task 1.12（Gate A 交付） |
-| 状态 | Accepted（架构基线）/ 部分 Proposed（见 §10 差距） |
+| 文档版本 | V0.3 |
+| 对应任务 | Phase 1 Task 1.12（Gate A Accepted） |
+| 状态 | Accepted（架构基线；ADR 0008 已确认，实现于 Task 1.12.6） |
 | 上游契约 | docs/09-REST-API-DESIGN.md、docs/10-REALTIME-SERVICE-DESIGN.md、ADR 0006/0007/0008 |
 | 视觉与交互规范 | docs/12-UI-UX-DESIGN.md V1.1（Accepted） |
 
@@ -14,6 +14,7 @@
 
 - V0.1（2026-11-26）：初始架构与接口调查（Task 1.12.1 旧划分）。
 - V0.2（2026-11-26）：按已确认 UI/UX 规范 V1.1 与 Task 1.12 新划分全面修订——Desktop Only、Feature-based Architecture、API Capability Matrix、现状对照与剩余差距（含 ADR 0008 Proposed）。
+- V0.3（2026-11-26）：Gate A 验收通过，记录四项已确认架构决策（§7 决策列、§11）。
 
 ## 1. 目标与边界
 
@@ -110,11 +111,11 @@ V0.1 §4 的设计继续有效并已实现（`api/sync.ts`）：
 | Environment Creation | POST /environments | S | — | — |
 | Environment Switching | 本地会话 + Gateway | S | Query 缓存隔离未落地 | 1.12.11 前端实现 |
 | Account List | GET /accounts | S | — | — |
-| Account Default Latency | — | N | 后端无账户级默认延迟字段；仅订单级 latency_preset | 最小扩展：paper_accounts 增加 default_latency 列 + 创建/更新参数；或 Phase 1 前端记住上次选择（本地偏好） |
+| Account Default Latency | — | N | 后端无账户级默认延迟字段 | **已决策**：后端持久化 `default_latency_preset`（Alembic 迁移，兼容存量），Task 1.12.8 前实施；未指定时沿用系统默认；已提交订单保存实际生效配置 |
 | Account Snapshot | GET /accounts/{id} | S | — | — |
 | Full Snapshot | GET /snapshot | S | — | — |
 | Balances | GET + WS `balances` | S | — | — |
-| Positions | GET + WS `positions` | P | 无当前估值价格/市值（§12.5） | 前端以 ticker × quantity 显示参考估值并明确标注；或后端后续提供估值端点 |
+| Positions | GET + WS `positions` | P | 无当前估值价格/市值（§12.5） | **已决策**：遵循 Task 1.4 有效 Bid 估值语义，不使用 Last Price；前端参考估值须用有效 Bid + Decimal 并明确标注；优先复用后端估值能力，缺失时最小 REST 扩展；Task 1.12.10 实施 |
 | Orders | GET + WS `orders` | S | 游标分页未实现（limit ≤ 200） | 按 docs/09 当前限制记录 |
 | Order Submission | POST /orders | S | 订单预估不存在（见 Order Preview） | — |
 | Order Cancellation | POST /orders/{id}/cancel | S | — | — |
@@ -126,9 +127,9 @@ V0.1 §4 的设计继续有效并已实现（`api/sync.ts`）：
 | Market Trades | WS `market.trade` | S | 有界列表前端实现 | — |
 | Market Quality | WS `market.quality` | S | — | — |
 | Historical Candles | GET /market/candles | S | — | — |
-| Realtime Candles | WS `market.candle` | P | 仅常驻周期实时推送 | ADR 0008（Proposed） |
-| Multi-interval Subscription | — | P | 静态周期列表，非动态引用计数 | ADR 0008 实施 |
-| Order Preview | — | N | 无后端预估 API | 预估手续费 = 数量×限价/参考价×费率（本地参考估算，明确标注）；预估成交金额同法；VWAP/Slippage 不展示 |
+| Realtime Candles | WS `market.candle` | P | 仅常驻周期（默认 1m）实时推送 | ADR 0008（Accepted），Task 1.12.6 实施 |
+| Multi-interval Subscription | — | P | 静态周期列表 → 动态引用计数 | ADR 0008（Accepted）：常驻 1m + 动态订阅、上限 32 可配置、30 秒宽限释放 |
+| Order Preview | — | N | 无后端预估 API | **已决策**：本地参考估算（市价买参考 Ask、市价卖参考 Bid、限价按委托限价；费率取实际配置，无可靠费率显示未知）；明确标注参考值；VWAP/Slippage 不展示；Task 1.12.8 实施 |
 | state_version | Snapshot + WS 事件 | S | — | — |
 | Replay | resume_from | S | — | — |
 | REST Resync | snapshot + sync 层 | S | — | — |
@@ -157,16 +158,17 @@ API Decimal 字符串保留精度；Zod 校验响应结构；decimal.js 承担�
 
 | 编号 | 内容 | 状态 |
 |---|---|---|
-| G1 | 多周期推送 | 已解决（静态列表）；动态订阅 → ADR 0008 Proposed |
+| G1 | 多周期推送 | 静态列表已解决；动态订阅 ADR 0008 **Accepted**（Task 1.12.6 实施） |
 | G2/G3 | executions/positions 推送 | 已解决 |
 | G4 | 订单簿 depth 过滤 | 前端切片（可接受） |
 | G5 | 环境列表端点 | 本地会话替代；可选增强 |
 | G6 | instrument 元数据端点 | 前端静态配置（Documented） |
 | G7 | 行情快照端点 | 可选增强 |
 | G8 | 游标分页 | 按 docs/09 限制记录 |
-| G9 | 账户默认延迟字段 | 最小扩展方案待负责人确认（§7.2） |
-| G10 | 订单预估 API | 本地参考估算替代（§7.3） |
+| G9 | 账户默认延迟 | **已决策**：后端持久化（Task 1.12.8 前） |
+| G10 | 订单预估 | **已决策**：本地参考估算（Task 1.12.8 实施） |
 | G11 | 执行记录 Maker/Taker 字段 | Drawer 暂不展示；后续评估 |
+| G12 | 持仓估值 | **已决策**：遵循 Task 1.4 有效 Bid 语义；优先复用/最小扩展后端能力（Task 1.12.10） |
 
 ## 11. 已确认事项
 
@@ -174,3 +176,7 @@ API Decimal 字符串保留精度；Zod 校验响应结构；decimal.js 承担�
 2. 后端默认端口 8642（2026-11-26）。
 3. Desktop Only，最小视口 1280px（2026-11-26，UI/UX V1.1）。
 4. E2E 运行须剥离系统代理环境变量（2026-11-26，已验证）。
+5. ADR 0008 Accepted：常驻 1m + 动态引用计数订阅，上限 32 可配置，非常驻频道 30 秒宽限释放（2026-11-26 Gate A 验收）。
+6. 账户默认延迟采用后端持久化 `default_latency_preset`（2026-11-26 Gate A 验收）。
+7. 订单预估采用本地参考估算，Ask/Bid 语义与费率依据规则见 §7（2026-11-26 Gate A 验收）。
+8. 持仓估值遵循 Task 1.4 有效 Bid 语义，不使用 Last Price（2026-11-26 Gate A 验收）。
