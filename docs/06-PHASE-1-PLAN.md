@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（1.12.1 Completed） |
+| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.2 Completed） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -174,10 +174,11 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 #### Task 1.12.2 — 工程初始化
 
-- [ ] pnpm + Vite + React + TypeScript + Tailwind CSS + shadcn/ui 基座。
-- [ ] React Router 路由骨架与布局占位。
-- [ ] Vitest + React Testing Library 测试工具链；Playwright 独立配置。
-- [ ] 锁定并记录全部依赖版本；保持后端 296 项测试基线不变。
+- [x] pnpm + Vite + React + TypeScript + Tailwind CSS 基座（shadcn/ui 基础设施：路径别名、cn 工具、CSS 变量随组件引入时落地）。
+- [x] React Router 路由骨架、布局占位与模拟交易声明页脚。
+- [x] Vitest + React Testing Library 测试工具链；Playwright 独立配置（浏览器按需安装）。
+- [x] 依赖版本记录（pnpm-lock.yaml）：React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3、React Router 7.18、Vitest 5.1、Playwright 1.65、pnpm 12.23、Node 26。
+- [x] 后端基线保持不变（300 passed，含 G1～G3 新增测试）。
 
 #### Task 1.12.3 — API 与 WebSocket 客户端层
 

@@ -178,11 +178,11 @@ Endpoint：`/api/v1/ws/environments/{environment_id}`，Subprotocol `crypto-lab.
 
 ## 13. 后端能力与前端需求差距分析
 
-| 编号 | 差距 | 影响 | 建议 |
+| 编号 | 差距 | 影响 | 状态 |
 |---|---|---|---|
-| G1 | WS K 线仅推送单一配置周期（`CRYPTO_LAB_FEED_CANDLE_INTERVAL`），无法动态多周期订阅 | 行情页多周期切换只能 REST 轮询 | 后端将 Feed 配置改为周期列表（如 `1m,5m,15m,1h`）并全部发布；前端按 interval 过滤。Market 页开工（1.12.5）前实施 |
-| G2 | `executions` topic 在 docs/10 §5 已定义，但服务端事务仅暂存 orders+balances，未暂存成交事件 | 成交页无实时推送，只能轮询 | 在订单成交事务中同批暂存 `executions` 事件（与 state_version 同事务），1.12.6 前实施 |
-| G3 | `positions` topic 同样未暂存 | 持仓页无实时推送 | 同 G2 一并处理 |
+| G1 | WS K 线仅推送单一配置周期 | 行情页多周期切换只能 REST 轮询 | **已解决（2026-11-26）**：`CRYPTO_LAB_FEED_CANDLE_INTERVALS` 周期列表，同一 Business 连接多周期发布，前端按 interval 过滤 |
+| G2 | `executions` topic 未暂存 | 成交页无实时推送 | **已解决（2026-11-26）**：成交事务同批暂存 executions 事件（共享 state_version/event_index） |
+| G3 | `positions` topic 未暂存 | 持仓页无实时推送 | **已解决（2026-11-26）**：同批暂存 positions 事件 |
 | G4 | `Subscription` 无 depth 字段，`market.order_book` 推送全部档位（合并后单条） | 带宽可接受（合并后非高频）；前端切片 top-N 展示 | Phase 1 前端自行切片；后端 depth 过滤列为可选增强 |
 | G5 | 无 `GET /api/v1/environments` 环境列表端点 | 多环境切换需自行记录 environment_id | Phase 1 前端本地持久化当前环境 ID + 引导创建；列表端点列为可选增强 |
 | G6 | 无 instrument 元数据端点（tick size、最小数量） | 下单表单精度提示只能硬编码 | 前端静态配置（与后端 `OKX:DOCUMENTED:SPOT:V1` 同源），标注 Documented |
