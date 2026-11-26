@@ -8,6 +8,7 @@ import { useSessionStore } from '@/app/sessionStore'
 import { useMarketStore } from '@/features/market/marketStore'
 import { useConnectionStore } from '@/app/connectionStore'
 import { useOrderDraftStore } from './orderDraftStore'
+import { useTradingStore } from './tradingStore'
 import { act } from '@testing-library/react'
 
 const server = setupServer()
@@ -67,6 +68,7 @@ describe('OrderEntryPanel', () => {
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
     await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('订单已提交')
     })
@@ -94,6 +96,7 @@ describe('OrderEntryPanel', () => {
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
     await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('MARKET_DATA_UNAVAILABLE')
     })
@@ -122,5 +125,47 @@ describe('OrderEntryPanel', () => {
     act(() => useOrderDraftStore.getState().pickPrice('61000.5'))
     expect(await screen.findByDisplayValue('61000.5')).toBeVisible()
     expect(screen.getByRole('button', { name: '限价' })).toBeVisible()
+  })
+
+  test('confirmation dialog previews the order and nothing is sent until confirmed', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    server.use(
+      http.post('*/api/v1/environments/env-1/orders', () => {
+        calls += 1
+        return HttpResponse.json({}, { status: 500 })
+      }),
+    )
+    render(<OrderEntryPanel />)
+    await user.type(screen.getByLabelText('数量（BTC）'), '1')
+    await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    const dialog = screen.getByRole('dialog', { name: '确认下单' })
+    expect(dialog).toHaveTextContent('本地参考估算')
+    expect(dialog).toHaveTextContent('行情缺失')
+    expect(calls).toBe(0)
+    await user.click(screen.getByRole('button', { name: '返回修改' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(calls).toBe(0)
+  })
+
+  test('Escape closes the confirmation without submitting', async () => {
+    const user = userEvent.setup()
+    render(<OrderEntryPanel />)
+    await user.type(screen.getByLabelText('数量（BTC）'), '1')
+    await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  test('shows the available balance and fills quantity from a percentage', async () => {
+    const user = userEvent.setup()
+    useTradingStore.setState({ balances: [{ asset: 'BTC', available: '2', locked: '0' }] })
+    render(<OrderEntryPanel />)
+    await user.click(screen.getByRole('button', { name: '卖出' }))
+    expect(screen.getByTestId('available-balance')).toHaveTextContent('2 BTC')
+    await user.click(screen.getByRole('button', { name: '50%' }))
+    expect(screen.getByLabelText('数量（BTC）')).toHaveValue('1')
   })
 })

@@ -11,7 +11,15 @@ import {
   validateOrderForm,
   type OrderFormValues,
 } from './orderForm'
-import { Button, Input, Label, Select } from '@/shared/ui'
+import { useTradingStore } from './tradingStore'
+import {
+  ALLOCATION_PERCENTS,
+  REFERENCE_FEE_RATE,
+  REFERENCE_FEE_SCHEDULE,
+  allocate,
+  buildOrderPreview,
+} from './orderPreview'
+import { Button, Dialog, Input, Label, Select, TermTip } from '@/shared/ui'
 
 const INSTRUMENT = 'okx:SPOT:BTC/USDT'
 
@@ -38,25 +46,48 @@ export function OrderEntryPanel() {
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [pending, setPending] = useState<OrderFormValues | null>(null)
+  const balances = useTradingStore((state) => state.balances)
+  const ticker = useMarketStore((state) => state.tickers[INSTRUMENT])
+  const quote = { bid: ticker?.ticker.bid, ask: ticker?.ticker.ask }
+  const availableQuote = balances.find((item) => item.asset === 'USDT')?.available ?? '0'
+  const availableBase = balances.find((item) => item.asset === 'BTC')?.available ?? '0'
+  const allocationUnavailable = values.side === 'BUY' && values.order_type === 'MARKET' && !quote.ask
 
   const marketOk = (quality?.status ?? 'VALID') === 'VALID'
   const connected = display !== 'offline'
   const tradable = marketOk && connected
 
-  const pickNonce = useOrderDraftStore((state) => state.pickNonce)
-  useEffect(() => {
-    if (pickNonce === 0) return
-    const price = useOrderDraftStore.getState().pickedPrice
-    if (price !== null) setValues((previous) => ({ ...previous, order_type: 'LIMIT', limit_price: price }))
-  }, [pickNonce])
+  // A price picked from the order book switches the draft to LIMIT. Subscribing
+  // only reacts to picks made after mount (stale picks are ignored).
+  useEffect(
+    () =>
+      useOrderDraftStore.subscribe((state, previous) => {
+        if (state.pickNonce === previous.pickNonce || state.pickedPrice === null) return
+        const price = state.pickedPrice
+        setValues((current) => ({ ...current, order_type: 'LIMIT', limit_price: price }))
+      }),
+    [],
+  )
 
   function update(patch: Partial<OrderFormValues>) {
     setValues((previous) => ({ ...previous, ...patch }))
   }
 
-  async function handleSubmit(event: FormEvent) {
+  function applyAllocation(percent: number) {
+    const result = allocate(percent, values, { base: availableBase, quote: availableQuote }, quote)
+    if (result === null) {
+      setErrors(['无法按比例计算：缺少可用余额或参考价格。'])
+      return
+    }
+    setErrors([])
+    update({ quantity: result.quantity, ...(result.max_quote_budget ? { max_quote_budget: result.max_quote_budget } : {}) })
+  }
+
+  /** Step 1 of docs/12 §11.5: client validation, then the confirmation dialog. */
+  function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (submitting || session === null) return
+    if (submitting || session === null || !tradable) return
     setMessage(null)
     const issues = validateOrderForm(values)
     if (issues.length > 0) {
@@ -64,18 +95,25 @@ export function OrderEntryPanel() {
       return
     }
     setErrors([])
+    setPending(values)
+  }
+
+  /** Step 2: user confirmed — the only path that calls REST. */
+  async function confirmSubmit() {
+    if (pending === null || submitting || session === null) return
+    const submitted = pending
     setSubmitting(true)
     try {
-      const request = { ...toOrderCreateRequest(values), account_id: session.accountId }
+      const request = { ...toOrderCreateRequest(submitted), account_id: session.accountId }
       const order = await rest.createOrder(session.environmentId, request)
       setMessage(
         `订单已提交：${order.order_id.slice(0, 8)}…（状态 ${order.status}）。成交价格与结果由模拟撮合决定。`,
       )
       setValues({
         ...EMPTY_FORM,
-        side: values.side,
-        order_type: values.order_type,
-        latency_preset: values.latency_preset,
+        side: submitted.side,
+        order_type: submitted.order_type,
+        latency_preset: submitted.latency_preset,
       })
     } catch (reason) {
       if (reason instanceof ApiError) {
@@ -85,6 +123,7 @@ export function OrderEntryPanel() {
       }
     } finally {
       setSubmitting(false)
+      setPending(null)
     }
   }
 
@@ -141,6 +180,13 @@ export function OrderEntryPanel() {
           ))}
         </div>
 
+        <p className="numeric flex justify-between text-[11px] text-ink-muted" data-testid="available-balance">
+          <span>可用余额</span>
+          <span>
+            {values.side === 'BUY' ? `${availableQuote} USDT` : `${availableBase} BTC`}
+          </span>
+        </p>
+
         <Label>
           数量（BTC）
           <Input
@@ -151,6 +197,24 @@ export function OrderEntryPanel() {
             required
           />
         </Label>
+
+        <p className="flex flex-wrap gap-x-3 text-[11px] text-ink-muted">
+          术语：<TermTip term="限价" description="你愿意成交的价格上限（买）或下限（卖）。限价单可能一直挂着不成交，直到价格到达或你取消。" /> <TermTip term="最大报价预算" description="市价买单最多愿意花费的 USDT，含手续费。预算内部分成交，未成交部分取消，冻结资金释放，不会自动追加资金。" /> <TermTip term="模拟执行延迟" description="从下单到模拟撮合之间的等待时间，用来模拟真实网络与交易所处理耗时；延迟期间行情可能变化。" />
+        </p>
+
+        <div className="grid grid-cols-4 gap-1" role="group" aria-label="按可用余额比例">
+          {ALLOCATION_PERCENTS.map((percent) => (
+            <button
+              key={percent}
+              type="button"
+              disabled={allocationUnavailable}
+              onClick={() => applyAllocation(percent)}
+              className="h-7 rounded-[6px] border border-line text-xs text-ink-secondary hover:bg-elevated disabled:opacity-50"
+            >
+              {percent}%
+            </button>
+          ))}
+        </div>
 
         {values.order_type === 'LIMIT' && (
           <Label>
@@ -235,6 +299,24 @@ export function OrderEntryPanel() {
           前端只提交订单意图；成交价格、手续费与结果由服务端模拟撮合决定。每次提交使用新的幂等键。
         </p>
       </form>
+
+      <Dialog open={pending !== null} title="确认下单" onClose={() => !submitting && setPending(null)}>
+        {pending !== null && session !== null && (
+          <ConfirmBody values={pending} quote={quote} session={session} />
+        )}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button variant="outline" onClick={() => setPending(null)} disabled={submitting}>
+            返回修改
+          </Button>
+          <Button
+            variant={pending?.side === 'SELL' ? 'sell' : 'buy'}
+            onClick={() => void confirmSubmit()}
+            disabled={submitting}
+          >
+            {submitting ? '提交中…' : '确认提交'}
+          </Button>
+        </div>
+      </Dialog>
     </section>
   )
 }
@@ -242,5 +324,59 @@ export function OrderEntryPanel() {
 function Badge({ text }: { text: string }) {
   return (
     <span className="rounded-full bg-negative/15 px-2 py-0.5 text-xs text-negative">{text}</span>
+  )
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4 py-0.5 text-xs">
+      <dt className="text-ink-muted">{label}</dt>
+      <dd className="numeric text-right text-ink">{value}</dd>
+    </div>
+  )
+}
+
+function ConfirmBody({
+  values,
+  quote,
+  session,
+}: {
+  values: OrderFormValues
+  quote: { bid?: string | null; ask?: string | null }
+  session: { environmentId: string; accountId: string }
+}) {
+  const preview = buildOrderPreview(values, quote)
+  return (
+    <div>
+      <dl>
+        <Line label="环境" value={`${session.environmentId.slice(0, 16)}…（模拟）`} />
+        <Line label="账户" value={`${session.accountId.slice(0, 16)}…`} />
+        <Line label="品种" value="OKX · BTC/USDT · 现货" />
+        <Line label="方向 / 类型" value={`${values.side === 'BUY' ? '买入' : '卖出'} · ${values.order_type === 'MARKET' ? '市价' : '限价 GTC'}`} />
+        <Line label="数量" value={`${values.quantity} BTC`} />
+        <Line
+          label={preview.referenceLabel || '参考价'}
+          value={preview.referencePrice === null ? '--（行情缺失）' : `${preview.referencePrice} USDT`}
+        />
+        {values.max_quote_budget !== undefined && (
+          <Line label="最大资金预算（含手续费）" value={`${values.max_quote_budget} USDT`} />
+        )}
+        <Line label="预估成交金额" value={preview.estimatedNotional === null ? '--' : `${preview.estimatedNotional} USDT`} />
+        <Line label="预估手续费" value={preview.estimatedFee === null ? '--' : `${preview.estimatedFee} USDT`} />
+        <Line
+          label="模拟执行延迟"
+          value={preview.latencyMs === null ? values.latency_preset : `${values.latency_preset}（${preview.latencyMs} ms）`}
+        />
+      </dl>
+      {preview.exceedsBudget && (
+        <p role="alert" className="mt-2 rounded-[6px] bg-warning/10 px-2 py-1.5 text-xs text-warning">
+          按参考价估算，成交金额加手续费超过预算：预算内部分成交，剩余部分取消。
+        </p>
+      )}
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+        以上为<strong>本地参考估算</strong>（假设费率 {REFERENCE_FEE_RATE}，参照 {REFERENCE_FEE_SCHEDULE}），不是撮合结果。
+        实际成交价、数量与手续费由服务端模拟撮合在延迟后按当时行情决定；订单被接受不等于已成交。
+      </p>
+    </div>
   )
 }
