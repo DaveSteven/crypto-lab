@@ -109,6 +109,21 @@ export class WSClient {
     return promise
   }
 
+  /**
+   * Add topics to the session set (restored on reconnect) and, when a session
+   * is live, subscribe to just the new ones without touching the resume cursor.
+   */
+  addTopics(topics: TopicFilter[]): void {
+    const fresh = topics.filter(
+      (topic) => !this.subscriptions.some((existing) => filtersEqual(existing, topic)),
+    )
+    if (fresh.length === 0) return
+    this.subscriptions = [...this.subscriptions, ...fresh]
+    if (this.status === 'subscribed') {
+      this.send({ type: 'subscribe', request_id: this.nextRequestId(), topics: fresh })
+    }
+  }
+
   unsubscribe(topics: TopicFilter[]): void {
     this.subscriptions = this.subscriptions.filter(
       (topic) => !topics.some((removed) => filtersEqual(topic, removed)),

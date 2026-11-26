@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（Gate A Accepted；1.12.3 UI 验收通过；1.12.6 前端部分完成，ADR 0008 后端待实施） |
+| 1.12 | React 前端应用 | In Progress（Gate A Accepted；1.12.3 UI 验收通过；1.12.6 完成，待真实行情实测） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -209,7 +209,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 - [x] Lightweight Charts 蜡烛图：REST seed + WS upsert、闭合保护、分页、断线补齐、周期切换。
 - [x] Volume 副图（无成交量不补 0）、Last Price Line、OHLC 图例（Crosshair 联动）、个人成交标记（§9.6，按真实成交时间所在 K 线聚合，保留 execution_id/order_id 追溯）、初始化竞态隔离（迟到未闭合 REST 页不覆盖已闭合/更新的实时 K 线）、缺失区间留空并提示（不生成假 K 线）。已通过 vitest（64 项）与 tsc/build；尚未做真实浏览器视觉验收。
-- [ ] 多周期实时能力落地（依赖 ADR 0008 确认；过渡期用全量常驻周期配置）。
+- [x] 多周期实时能力落地（ADR 0008 已实施：引用计数动态订阅、常驻 1m、上限 32、30 秒宽限、SUBSCRIPTION_LIMIT）；单元/接线测试通过，真实 OKX 动态订阅实测待做。
 
 ##### Task 1.12.7 — Market Workspace
 

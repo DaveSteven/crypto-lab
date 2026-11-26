@@ -45,6 +45,12 @@ CHANNEL_REQUEST_NAME = {
 CANDLE_KIND = "candle"
 
 
+class SubscriptionLimitError(ValueError):
+    """Upstream candle channel cap reached (ADR 0008); never silently dropped."""
+
+    code = "SUBSCRIPTION_LIMIT"
+
+
 class Connection(Protocol):
     async def send(self, text: str) -> None: ...
 
@@ -97,8 +103,12 @@ class OkxMarketFeed:
         order_book_state: OrderBookMarketState | None = None,
         on_canonical: CanonicalConsumer | None = None,
         on_order_book_view: OrderBookConsumer | None = None,
+        max_candle_channels: int = 32,
+        candle_grace_seconds: float = 30.0,
     ) -> None:
         self.bridge = bridge
+        self.max_candle_channels = max_candle_channels
+        self.candle_grace_seconds = candle_grace_seconds
         self.environment_id = environment_id
         self.instruments = tuple(instruments)
         self.channels = tuple(channels)
@@ -146,6 +156,10 @@ class OkxMarketFeed:
         self._book_health: dict[str, str] = {}
         self._awaiting_pong: dict[str, bool] = {}
         self._acknowledged: set[tuple[Any, Any]] = set()
+        # ADR 0008: dynamic candle channels keyed by (instrument_id, interval),
+        # reference-counted by owner (one owner per client connection).
+        self._dynamic_owners: dict[tuple[str, str], set[str]] = {}
+        self._grace_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 
     def _endpoint_plan(self) -> dict[str, tuple[str, ...]]:
         """Map each OKX WebSocket endpoint to the channel kinds it serves.
@@ -212,8 +226,74 @@ class OkxMarketFeed:
             self.stats["reconnects"] += 1
             await self._sleep(self._next_backoff())
 
+    def _is_resident(self, interval: str) -> bool:
+        return interval in self.candle_intervals
+
+    def active_candle_channel_count(self) -> int:
+        return len(self.instruments) * len(self.candle_intervals) + len(self._dynamic_owners)
+
+    def _candle_active(self, instrument_id: str, interval: str) -> bool:
+        return self._is_resident(interval) or (instrument_id, interval) in self._dynamic_owners
+
+    async def acquire_candle(self, owner: str, instrument_id: str, interval: str) -> None:
+        """Reference one candle channel for ``owner`` (idempotent per owner)."""
+        if instrument_id not in self.instruments:
+            raise ValueError(f"instrument is not served by the feed: {instrument_id}")
+        if interval not in OKX_CHANNEL:
+            raise ValueError(f"unsupported candle interval: {interval}")
+        if CANDLE_KIND not in self.channels or self._is_resident(interval):
+            return
+        key = (instrument_id, interval)
+        owners = self._dynamic_owners.get(key)
+        if owners is None:
+            if self.active_candle_channel_count() >= self.max_candle_channels:
+                raise SubscriptionLimitError(
+                    f"candle channel limit reached ({self.max_candle_channels})"
+                )
+            owners = self._dynamic_owners[key] = set()
+            await self._send_candle_op("subscribe", key)
+        owners.add(owner)
+        grace = self._grace_tasks.pop(key, None)
+        if grace is not None:
+            grace.cancel()
+
+    def release_candle(self, owner: str, instrument_id: str, interval: str) -> None:
+        key = (instrument_id, interval)
+        owners = self._dynamic_owners.get(key)
+        if owners is None:
+            return
+        owners.discard(owner)
+        if not owners and key not in self._grace_tasks:
+            self._grace_tasks[key] = asyncio.create_task(self._grace_release(key))
+
+    def release_owner(self, owner: str) -> None:
+        for instrument_id, interval in tuple(self._dynamic_owners):
+            self.release_candle(owner, instrument_id, interval)
+
+    async def _grace_release(self, key: tuple[str, str]) -> None:
+        try:
+            await asyncio.sleep(self.candle_grace_seconds)
+        except asyncio.CancelledError:
+            return
+        self._grace_tasks.pop(key, None)
+        if self._dynamic_owners.get(key):
+            return
+        self._dynamic_owners.pop(key, None)
+        await self._send_candle_op("unsubscribe", key)
+
+    async def _send_candle_op(self, op: str, key: tuple[str, str]) -> None:
+        connection = self._connections.get(self.business_url)
+        if connection is None:
+            return  # subscribed from the active set on (re)connect
+        argument = {"channel": OKX_CHANNEL[key[1]], "instId": _okx_instrument(key[0])}
+        with contextlib.suppress(Exception):
+            await connection.send(json.dumps({"op": op, "args": [argument]}))
+
     async def stop(self) -> None:
         self._stopping = True
+        for task in tuple(self._grace_tasks.values()):
+            task.cancel()
+        self._grace_tasks.clear()
         for connection in tuple(self._connections.values()):
             with contextlib.suppress(Exception):
                 await connection.close()
@@ -258,6 +338,11 @@ class OkxMarketFeed:
                         arguments.append(
                             {"channel": OKX_CHANNEL[interval], "instId": instrument}
                         )
+                    for dyn_instrument, dyn_interval in self._dynamic_owners:
+                        if dyn_instrument == instrument_id:
+                            arguments.append(
+                                {"channel": OKX_CHANNEL[dyn_interval], "instId": instrument}
+                            )
                 else:
                     arguments.append(
                         {"channel": CHANNEL_REQUEST_NAME[channel], "instId": instrument}
@@ -334,7 +419,7 @@ class OkxMarketFeed:
             elif channel in OKX_CHANNEL.values():
                 for event in normalize_okx_websocket_candles(payload, received_ts_ms=now_ms):
                     if (
-                        event.payload.interval in self.candle_intervals
+                        self._candle_active(event.instrument_id, event.payload.interval)
                         and event.instrument_id in self.instruments
                     ):
                         await self._publish_canonical(event, now_ms)

@@ -27,6 +27,8 @@ interface MarketState {
   tickers: Record<string, TickerView>
   quality: Record<string, QualityView>
   orderBooks: Record<string, OrderBookView>
+  candleSubscriptionError: string | null
+  setCandleSubscriptionError: (message: string | null) => void
   seedCandles: (instrumentId: string, interval: string, bars: CandleBar[]) => void
   applyMarketEvent: (message: MarketEvent) => void
   reset: () => void
@@ -37,7 +39,10 @@ export const useMarketStore = create<MarketState>()((set) => ({
   tickers: {},
   quality: {},
   orderBooks: {},
-  reset: () => set({ candles: {}, tickers: {}, quality: {}, orderBooks: {} }),
+  candleSubscriptionError: null,
+  setCandleSubscriptionError: (message) => set({ candleSubscriptionError: message }),
+  reset: () =>
+    set({ candles: {}, tickers: {}, quality: {}, orderBooks: {}, candleSubscriptionError: null }),
 
   seedCandles: (instrumentId, interval, bars) =>
     set((state) => {

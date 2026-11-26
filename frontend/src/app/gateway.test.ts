@@ -4,6 +4,7 @@ import { WSClient } from '@/shared/api/ws'
 import { useConnectionStore } from '@/app/connectionStore'
 import { useTradingStore } from '@/features/trading/tradingStore'
 import { useSessionStore } from '@/app/sessionStore'
+import { useMarketStore } from '@/features/market/marketStore'
 
 class FakeSocket {
   readyState = 1
@@ -141,6 +142,41 @@ describe('RealtimeGateway', () => {
     expect(createdClients).toHaveLength(1)
     gateway.start('env-2', 'a-1')
     expect(createdClients).toHaveLength(2)
+    gateway.stop()
+  })
+
+  test('candle interval switch subscribes the new channel and releases the previous one', async () => {
+    const { gateway, socket } = makeGateway(snapshot)
+    gateway.start('env-1', 'a-1', ['okx:SPOT:BTC/USDT'])
+    readyAndAck(socket)
+    await vi.waitFor(() => expect(useConnectionStore.getState().status).toBe('subscribed'))
+    const sentTypes = () => socket.sent.map((raw) => JSON.parse(raw))
+    const candle = (interval: string) => ({
+      name: 'market.candle',
+      instrument_id: 'okx:SPOT:BTC/USDT',
+      interval,
+    })
+
+    gateway.setCandleInterval('okx:SPOT:BTC/USDT', '5m')
+    expect(sentTypes().at(-1)).toMatchObject({ type: 'subscribe', topics: [candle('5m')] })
+    gateway.setCandleInterval('okx:SPOT:BTC/USDT', '1h')
+    const last = sentTypes().slice(-2)
+    expect(last[0]).toMatchObject({ type: 'unsubscribe', topics: [candle('5m')] })
+    expect(last[1]).toMatchObject({ type: 'subscribe', topics: [candle('1h')] })
+    // Back to the resident 1m: release the dynamic one, never unsubscribe 1m.
+    gateway.setCandleInterval('okx:SPOT:BTC/USDT', '1m')
+    expect(sentTypes().at(-1)).toMatchObject({ type: 'unsubscribe', topics: [candle('1h')] })
+    gateway.stop()
+  })
+
+  test('SUBSCRIPTION_LIMIT error is surfaced to the market store', async () => {
+    const { gateway, socket } = makeGateway(snapshot)
+    gateway.start('env-1', 'a-1', ['okx:SPOT:BTC/USDT'])
+    readyAndAck(socket)
+    socket.serverSend({ type: 'error', code: 'SUBSCRIPTION_LIMIT', message: 'candle channel limit reached (32)' })
+    expect(useMarketStore.getState().candleSubscriptionError).toContain('limit')
+    gateway.setCandleInterval('okx:SPOT:BTC/USDT', '5m')
+    expect(useMarketStore.getState().candleSubscriptionError).toBeNull()
     gateway.stop()
   })
 })

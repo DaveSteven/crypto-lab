@@ -136,7 +136,7 @@ V0.1 §4 的设计继续有效并已实现（`api/sync.ts`）：
 
 ## 7. Backend Gap Handling（Instruction §7 对应）
 
-1. **Candle 多周期**：ADR 0008（Proposed）。实施前过渡策略：`CRYPTO_LAB_FEED_CANDLE_INTERVALS=1m,5m,15m,1h,4h,1d` 全量常驻（本地带宽可接受），六周期即具备实时能力；ADR 0008 作为带宽优化后续实施。
+1. **Candle 多周期**：ADR 0008（Accepted，已于 Task 1.12.6 实施）。原过渡策略（已不再必需）：`CRYPTO_LAB_FEED_CANDLE_INTERVALS=1m,5m,15m,1h,4h,1d` 全量常驻（本地带宽可接受），六周期即具备实时能力；ADR 0008 作为带宽优化后续实施。
 2. **Account Default Latency**：后端无此字段。最小扩展建议：`paper_accounts.default_latency_preset` 可空列 + 设置页更新端点；Phase 1 允许前端以"上次使用"本地偏好替代并明确标注。需负责人确认采用哪种。
 3. **Order Preview**：无后端预估。确认 Dialog 展示本地参考估算（费率 × 名义额），标注"本地参考估算，非实际撮合结果"；VWAP/Slippage 不展示（docs/12 §11.4 允许）。
 4. **Overview 估值**：持仓估值 = ticker.last/中间价 × 数量，标注估值币种 USDT 与数据时间；无历史快照前不实现收益曲线；无法估值的资产明确列出。

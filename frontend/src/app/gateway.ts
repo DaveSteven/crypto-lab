@@ -6,6 +6,8 @@ import { useConnectionStore } from '@/app/connectionStore'
 import { useMarketStore } from '@/features/market/marketStore'
 import { useTradingStore } from '@/features/trading/tradingStore'
 
+const RESIDENT_INTERVAL = '1m'
+
 export interface GatewayDeps {
   createRest?: () => RestClient
   createClient?: (url: string) => WSClient
@@ -28,6 +30,8 @@ export class RealtimeGateway {
   private sync: TradingStateSync | null = null
   private connectedFor: string | null = null
   private readonly deps: GatewayDeps
+  private dynamicCandle: { instrumentId: string; interval: string } | null = null
+  private pendingCandle: { instrumentId: string; interval: string } | null = null
 
   constructor(deps: GatewayDeps = {}) {
     this.deps = deps
@@ -59,6 +63,12 @@ export class RealtimeGateway {
 
     client.onStatus((status) => useConnectionStore.getState().update({ status }))
     client.onMessage((message) => {
+      if (message.type === 'error') {
+        if (message.code === 'SUBSCRIPTION_LIMIT') {
+          useMarketStore.getState().setCandleSubscriptionError(message.message ?? message.code)
+        }
+        return
+      }
       if (!('event_ts_ms' in message)) return
       useConnectionStore.getState().update({ lastEventTsMs: message.event_ts_ms })
       if (
@@ -86,7 +96,8 @@ export class RealtimeGateway {
         { name: 'market.ticker', instrument_id: instrumentId },
         { name: 'market.trade', instrument_id: instrumentId },
         { name: 'market.order_book', instrument_id: instrumentId },
-        { name: 'market.candle', instrument_id: instrumentId },
+        // Resident 1m channel; other intervals are subscribed on demand (ADR 0008).
+        { name: 'market.candle', instrument_id: instrumentId, interval: RESIDENT_INTERVAL },
         { name: 'market.quality', instrument_id: instrumentId },
       )
     }
@@ -105,9 +116,39 @@ export class RealtimeGateway {
     })
 
     client.connect()
+    if (this.pendingCandle !== null) {
+      const pending = this.pendingCandle
+      this.pendingCandle = null
+      this.setCandleInterval(pending.instrumentId, pending.interval)
+    }
+  }
+
+  /**
+   * Make `interval` the live candle channel for the instrument. The previous
+   * dynamic interval is released (the server keeps it 30s before dropping the
+   * upstream channel). The resident 1m channel is never unsubscribed.
+   */
+  setCandleInterval(instrumentId: string, interval: string): void {
+    useMarketStore.getState().setCandleSubscriptionError(null)
+    const client = this.client
+    if (client === null) {
+      this.pendingCandle = { instrumentId, interval }
+      return
+    }
+    const previous = this.dynamicCandle
+    if (previous !== null && (previous.instrumentId !== instrumentId || previous.interval !== interval)) {
+      client.unsubscribe([
+        { name: 'market.candle', instrument_id: previous.instrumentId, interval: previous.interval },
+      ])
+      this.dynamicCandle = null
+    }
+    if (interval === RESIDENT_INTERVAL) return
+    client.addTopics([{ name: 'market.candle', instrument_id: instrumentId, interval }])
+    this.dynamicCandle = { instrumentId, interval }
   }
 
   stop(): void {
+    this.dynamicCandle = null
     this.client?.stop()
     this.client = null
     this.sync = null

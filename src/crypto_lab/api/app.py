@@ -352,6 +352,19 @@ def create_app(
                         for topic in message.topics:
                             if topic.account_id is not None:
                                 service.get_account(environment_id, topic.account_id)
+                        feed = app.state.market_feed
+                        if feed is not None and hasattr(feed, "acquire_candle"):
+                            for topic in message.topics:
+                                if topic.name == "market.candle" and topic.interval is not None:
+                                    if topic.instrument_id is None:
+                                        raise ValueError(
+                                            "candle interval subscription requires instrument_id"
+                                        )
+                                    await feed.acquire_candle(
+                                        connection.connection_id,
+                                        topic.instrument_id,
+                                        topic.interval,
+                                    )
                         hub.subscribe(connection, set(message.topics))
                         replayed = 0
                         if message.resume_from is not None:
@@ -371,6 +384,19 @@ def create_app(
                         )
                     elif isinstance(message, UnsubscribeMessage):
                         hub.unsubscribe(connection, set(message.topics))
+                        feed = app.state.market_feed
+                        if feed is not None and hasattr(feed, "release_candle"):
+                            for topic in message.topics:
+                                if (
+                                    topic.name == "market.candle"
+                                    and topic.interval is not None
+                                    and topic.instrument_id is not None
+                                ):
+                                    feed.release_candle(
+                                        connection.connection_id,
+                                        topic.instrument_id,
+                                        topic.interval,
+                                    )
                         await _serial_send(
                             websocket,
                             send_lock,
@@ -405,6 +431,9 @@ def create_app(
         finally:
             sender.cancel()
             heartbeat.cancel()
+            feed = app.state.market_feed
+            if feed is not None and hasattr(feed, "release_owner"):
+                feed.release_owner(connection.connection_id)
             await hub.disconnect(connection)
 
     app.state.websocket_path = "/api/v1/ws/environments/{environment_id}"

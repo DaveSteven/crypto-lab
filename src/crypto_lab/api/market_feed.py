@@ -40,6 +40,8 @@ class MarketFeedSettings:
     candle_intervals: tuple[str, ...] = ("1m",)
     dispatch_interval_ms: int = 200
     max_book_age_ms: int = 5_000
+    max_candle_channels: int = 32
+    candle_grace_seconds: float = 30.0
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> MarketFeedSettings:
@@ -84,6 +86,12 @@ class MarketFeedSettings:
             candle_intervals=candle_intervals,
             dispatch_interval_ms=dispatch_interval_ms,
             max_book_age_ms=max_book_age_ms,
+            max_candle_channels=_positive_int(
+                values.get("CRYPTO_LAB_FEED_MAX_CANDLE_CHANNELS"), 32
+            ),
+            candle_grace_seconds=float(
+                _positive_int(values.get("CRYPTO_LAB_FEED_CANDLE_GRACE_SECONDS"), 30)
+            ),
         )
 
 
@@ -129,6 +137,8 @@ def build_market_feed(
         reconnect_delays_seconds=(1.0, 2.0, 5.0, 10.0) if settings.reconnect_enabled else (),
         on_canonical=on_canonical,  # type: ignore[arg-type]
         on_order_book_view=on_order_book_view,  # type: ignore[arg-type]
+        max_candle_channels=settings.max_candle_channels,
+        candle_grace_seconds=settings.candle_grace_seconds,
         **({"connection_factory": connection_factory} if connection_factory else {}),
     )
 

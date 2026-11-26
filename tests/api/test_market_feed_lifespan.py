@@ -78,3 +78,55 @@ def test_feed_failure_does_not_break_rest_service() -> None:
     with TestClient(app) as client:
         # The feed task crashed, yet REST endpoints remain available.
         assert client.get("/health/live").status_code == 200
+
+
+class RecordingFeed(StubMarketFeed):
+    def __init__(self, limit: int | None = None) -> None:
+        super().__init__()
+        self.limit = limit
+        self.calls: list[tuple] = []
+
+    async def acquire_candle(self, owner: str, instrument_id: str, interval: str) -> None:
+        if self.limit is not None and len(self.calls) >= self.limit:
+            from crypto_lab.realtime.feed import SubscriptionLimitError
+
+            raise SubscriptionLimitError("limit")
+        self.calls.append(("acquire", instrument_id, interval))
+
+    def release_candle(self, owner: str, instrument_id: str, interval: str) -> None:
+        self.calls.append(("release", instrument_id, interval))
+
+    def release_owner(self, owner: str) -> None:
+        self.calls.append(("owner", owner))
+
+
+def _ws(client):
+    return client.websocket_connect(
+        "/api/v1/ws/environments/env-1",
+        subprotocols=["crypto-lab.v1"],
+        headers={"origin": "http://localhost:5173"},
+    )
+
+
+def test_ws_candle_interval_subscription_drives_feed_refs() -> None:
+    feed = RecordingFeed(limit=1)
+    app = create_app(
+        service=StubService(),
+        market_feed=feed,
+        market_feed_settings=MarketFeedSettings(enabled=True),
+    )
+    topic = {"name": "market.candle", "instrument_id": "okx:SPOT:BTC/USDT", "interval": "5m"}
+    with TestClient(app) as client, _ws(client) as ws:
+        assert ws.receive_json()["type"] == "session.ready"
+        ws.send_json({"type": "subscribe", "request_id": "r1", "topics": [topic]})
+        assert ws.receive_json()["type"] == "subscription.ack"
+        ws.send_json(
+            {"type": "subscribe", "request_id": "r2", "topics": [{**topic, "interval": "1h"}]}
+        )
+        error = ws.receive_json()
+        assert error["type"] == "error" and error["code"] == "SUBSCRIPTION_LIMIT"
+        ws.send_json({"type": "unsubscribe", "request_id": "r3", "topics": [topic]})
+        assert ws.receive_json()["type"] == "subscription.ack"
+    kinds = [call[0] for call in feed.calls]
+    assert kinds[:2] == ["acquire", "release"]
+    assert kinds[-1] == "owner"

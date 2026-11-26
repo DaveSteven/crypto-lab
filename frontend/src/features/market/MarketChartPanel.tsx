@@ -11,6 +11,7 @@ import {
 } from 'lightweight-charts'
 import { useTradingStore } from '@/features/trading/tradingStore'
 import { rest } from '@/shared/api/client'
+import { gateway } from '@/app/gateway'
 import { useConnectionStore, connectionDisplay } from '@/app/connectionStore'
 import { useMarketStore } from './marketStore'
 import {
@@ -63,6 +64,12 @@ export function MarketChartPanel() {
   const status = useConnectionStore((state) => state.status)
   const display = connectionDisplay(status)
   const seedCandles = useMarketStore((state) => state.seedCandles)
+  const candleError = useMarketStore((state) => state.candleSubscriptionError)
+
+  // ADR 0008: the visible interval drives the live upstream candle channel.
+  useEffect(() => {
+    gateway.setCandleInterval(INSTRUMENT, interval)
+  }, [interval])
 
   useEffect(() => {
     let cancelled = false
@@ -291,6 +298,12 @@ export function MarketChartPanel() {
         )}
         <div ref={containerRef} className="h-full w-full" data-testid="candle-chart" />
       </div>
+
+      {candleError !== null && (
+        <p role="alert" className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-warning">
+          {interval} 周期实时订阅失败（{candleError}），仅显示历史数据。
+        </p>
+      )}
 
       {missingTotal > 0 && (
         <p role="status" className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-warning">
