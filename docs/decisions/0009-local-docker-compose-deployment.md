@@ -40,7 +40,7 @@ Phase 1 目前以开发方式运行（本机 Python 进程 + PostgreSQL 容器 +
 
 ### 网络
 
-- 默认访问地址 `http://localhost:8080`，**仅绑定本机回环地址**（宿主机端口映射 `127.0.0.1:8080`）。
+- 默认访问地址 `http://localhost:18080`，**仅绑定本机回环地址**（宿主机端口映射 `127.0.0.1:18080`）。容器内 Nginx 仍监听 8080，宿主机端口可通过 `CRYPTO_LAB_WEB_PORT` 覆盖。
 - Nginx 统一代理 REST 与 WebSocket；WebSocket 代理必须支持连接升级（`Upgrade/Connection`）与长连接（读写超时大于应用心跳间隔 15s / 客户端超时 45s，docs/10）。
 - PostgreSQL 与 Backend 仅在 Docker 内部网络；正式运行环境不向宿主机暴露其端口。
 - 无认证机制前禁止默认公网部署。

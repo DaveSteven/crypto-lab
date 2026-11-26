@@ -41,7 +41,7 @@ cp .env.example .env
 docker compose up --build --wait
 ```
 
-完成后访问 `http://127.0.0.1:8080`。Compose 只将 Nginx 端口绑定到宿主机回环地址；Backend 和 PostgreSQL 仅在容器网络内可达。迁移任务成功后 Backend 才会启动。
+完成后访问 `http://127.0.0.1:18080`。Compose 只将 Nginx 端口绑定到宿主机回环地址；Backend 和 PostgreSQL 仅在容器网络内可达。迁移任务成功后 Backend 才会启动。如需其他宿主机端口，可在 `.env` 中修改 `CRYPTO_LAB_WEB_PORT`。
 
 ```bash
 docker compose down

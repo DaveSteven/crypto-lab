@@ -77,7 +77,7 @@ E2E 使用真实 FastAPI、PostgreSQL、Dispatcher、Scheduler、撮合、WebSoc
 ADR-0009 已实施。实测证据：
 
 - PostgreSQL 16、独立 Alembic migrate task、单 Worker Backend、Nginx Frontend 全部 Healthy。
-- 宿主机只暴露 `127.0.0.1:8080`（验收时使用隔离端口 18080）；Backend 8642 和 PostgreSQL 5432 只在 Compose 网络内可达。
+- 宿主机默认只暴露 `127.0.0.1:18080`（容器内 Nginx 为 8080）；Backend 8642 和 PostgreSQL 5432 只在 Compose 网络内可达。
 - Nginx 经过 REST 创建/读取及 WebSocket Subprotocol 握手验证。
 - Backend 重启后环境仍可读取。
 - 备份后新增标记数据，执行恢复后该标记返回 404，证明已回到备份时点。
