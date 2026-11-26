@@ -13,8 +13,11 @@ authors = [
   { name = "Crypto Lab contributors" },
 ]
 dependencies = [
+  "alembic>=1.14,<2",
   "pydantic>=2.12,<3",
+  "psycopg[binary]>=3.2,<4",
   "python-socks[asyncio]>=2.7,<3",
+  "sqlalchemy>=2.0,<2.1",
   "websockets>=15,<16",
 ]
 

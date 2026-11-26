@@ -1,6 +1,6 @@
 # ADR-0004：PostgreSQL 持久化与事务边界
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-11-26
 - 适用范围：Phase 1 Task 1.9～1.10
 
@@ -8,7 +8,7 @@
 
 Task 1.8 已建立进程内 Unit of Work，但不能恢复进程崩溃。Task 1.9 需要持久化账户、流水、订单、成交、持仓投影、待执行订单、事件处理结果、模拟流动性和确定性 ID 状态，同时保留既有权威来源和原子边界。
 
-## 决策提案
+## 决策
 
 1. 使用 PostgreSQL、SQLAlchemy 2.x、psycopg 3 和 Alembic。
 2. Task 1.9 采用同步 Session 和显式事务，不同时维护异步 Repository。
@@ -26,6 +26,6 @@ Task 1.8 已建立进程内 Unit of Work，但不能恢复进程崩溃。Task 1.
 - 现有 Python Callable 事件 Handler 不能直接持久化，需要类型化 Event Payload 和 Dispatcher。
 - 数据库事务成为 Task 1.9 后正式应用路径的原子边界；内存 Unit of Work 继续服务纯领域测试和回放。
 
-## 待确认
+## 确认记录
 
-以上方案及 [`../08-PERSISTENCE-DESIGN.md`](../08-PERSISTENCE-DESIGN.md) 的 Schema、精度、锁和恢复策略需项目负责人确认后方可实施正式代码及迁移。
+项目负责人已于 2026-11-26 确认以上方案及 [`../08-PERSISTENCE-DESIGN.md`](../08-PERSISTENCE-DESIGN.md) 的 Schema、精度、锁和恢复策略。

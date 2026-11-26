@@ -6,7 +6,7 @@
 |---|---|
 | 文档版本 | V0.1 |
 | 对应任务 | Phase 1 Task 1.9 |
-| 状态 | Proposed / 待项目负责人确认 |
+| 状态 | Accepted / Implementation Active |
 | 数据库 | PostgreSQL |
 
 本文档只提出持久化架构，不表示数据库依赖、Schema 或迁移已经实现。确认前不得改变现有领域金融规则。
