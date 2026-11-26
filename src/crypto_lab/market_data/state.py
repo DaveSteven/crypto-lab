@@ -40,6 +40,12 @@ class OrderBookMarketState:
     def __init__(self) -> None:
         self._books: dict[tuple[ExchangeId, str], OrderBookView] = {}
 
+    def snapshot_state(self) -> dict[tuple[ExchangeId, str], OrderBookView]:
+        return self._books.copy()
+
+    def restore_state(self, state: dict[tuple[ExchangeId, str], OrderBookView]) -> None:
+        self._books = state.copy()
+
     def apply_snapshot(
         self,
         event: MarketEventEnvelope[OrderBookSnapshot],

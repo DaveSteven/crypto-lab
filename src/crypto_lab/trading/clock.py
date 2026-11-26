@@ -39,6 +39,12 @@ class ManualClock:
     def monotonic_ms(self) -> int:
         return self._monotonic_ms
 
+    def snapshot_state(self) -> tuple[int, int]:
+        return (self._utc_ms, self._monotonic_ms)
+
+    def restore_state(self, state: tuple[int, int]) -> None:
+        self._utc_ms, self._monotonic_ms = state
+
     def advance(self, milliseconds: int) -> None:
         self._require_nonnegative(milliseconds, "milliseconds")
         self._utc_ms += milliseconds

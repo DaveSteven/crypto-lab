@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import Field
 
+from crypto_lab.trading.clock import Clock
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.unit_of_work import InMemoryUnitOfWork
 
@@ -52,12 +53,14 @@ class SerialEventProcessor:
         unit_of_work: InMemoryUnitOfWork,
         *,
         failure_injector: Callable[[str], None] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if not simulation_environment_id:
             raise ValueError("simulation environment ID is required")
         self.simulation_environment_id = simulation_environment_id
         self.unit_of_work = unit_of_work
         self.failure_injector = failure_injector
+        self.clock = clock
         self._pending: dict[str, tuple[SimulationEvent, EventHandler]] = {}
         self._processed: dict[str, EventProcessingResult] = {}
         self._next_arrival_sequence = 1
@@ -105,6 +108,7 @@ class SerialEventProcessor:
             return result
 
         def process() -> EventProcessingResult:
+            self._advance_clock(event.timestamp_ms)
             _, handler = self._pending[event.event_id]
             value = handler()
             result = EventProcessingResult(
@@ -120,6 +124,19 @@ class SerialEventProcessor:
             return result
 
         return self.unit_of_work.run(process)
+
+    def _advance_clock(self, timestamp_ms: int) -> None:
+        if self.clock is None:
+            return
+        current = self.clock.now_utc_ms()
+        if timestamp_ms < current:
+            raise ValueError("event timestamp precedes simulation clock")
+        setter = getattr(self.clock, "set_utc_ms", None)
+        if setter is None:
+            if timestamp_ms > current:
+                raise ValueError("non-manual clock cannot advance to a future event")
+            return
+        setter(timestamp_ms)
 
     def process_all(self) -> tuple[EventProcessingResult, ...]:
         results: list[EventProcessingResult] = []
