@@ -101,3 +101,16 @@ def test_build_market_feed_rejects_unsupported_exchange() -> None:
 def test_bridge_import_surface_unchanged() -> None:
     # MarketRealtimeBridge remains importable for existing consumers.
     assert MarketRealtimeBridge is not None
+
+
+def test_settings_parse_multi_candle_intervals() -> None:
+    settings = MarketFeedSettings.from_env(
+        {"CRYPTO_LAB_FEED_CANDLE_INTERVALS": "1m, 5m,1h"}
+    )
+    assert settings.candle_intervals == ("1m", "5m", "1h")
+    assert settings.candle_interval == "1m"
+
+
+def test_settings_fall_back_to_single_interval() -> None:
+    settings = MarketFeedSettings.from_env({"CRYPTO_LAB_FEED_CANDLE_INTERVAL": "5m"})
+    assert settings.candle_intervals == ("5m",)

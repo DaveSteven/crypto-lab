@@ -37,6 +37,7 @@ class MarketFeedSettings:
     instruments: tuple[str, ...] = (f"okx:SPOT:{DEFAULT_INSTRUMENT}",)
     reconnect_enabled: bool = True
     candle_interval: str = "1m"
+    candle_intervals: tuple[str, ...] = ("1m",)
     dispatch_interval_ms: int = 200
     max_book_age_ms: int = 5_000
 
@@ -63,6 +64,13 @@ class MarketFeedSettings:
         if not instruments:
             instruments = (f"okx:SPOT:{DEFAULT_INSTRUMENT}",)
         candle_interval = (values.get("CRYPTO_LAB_FEED_CANDLE_INTERVAL") or "1m").strip()
+        raw_intervals = values.get("CRYPTO_LAB_FEED_CANDLE_INTERVALS")
+        if raw_intervals is None or not raw_intervals.strip():
+            candle_intervals = (candle_interval,)
+        else:
+            candle_intervals = tuple(
+                item.strip() for item in raw_intervals.split(",") if item.strip()
+            ) or (candle_interval,)
         dispatch_interval_ms = _positive_int(
             values.get("CRYPTO_LAB_FEED_DISPATCH_INTERVAL_MS"), 200
         )
@@ -73,6 +81,7 @@ class MarketFeedSettings:
             instruments=instruments,
             reconnect_enabled=flag("CRYPTO_LAB_FEED_RECONNECT_ENABLED", True),
             candle_interval=candle_interval,
+            candle_intervals=candle_intervals,
             dispatch_interval_ms=dispatch_interval_ms,
             max_book_age_ms=max_book_age_ms,
         )
@@ -115,6 +124,7 @@ def build_market_feed(
         instruments=settings.instruments,
         channels=("ticker", "trade", "candle", "order_book"),
         candle_interval=settings.candle_interval,
+        candle_intervals=settings.candle_intervals,
         url=OKX_PUBLIC_WS_URL,
         reconnect_delays_seconds=(1.0, 2.0, 5.0, 10.0) if settings.reconnect_enabled else (),
         on_canonical=on_canonical,  # type: ignore[arg-type]

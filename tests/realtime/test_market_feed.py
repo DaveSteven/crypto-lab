@@ -423,3 +423,52 @@ def test_stop_closes_connection_and_run_returns() -> None:
         assert connection.closed is True
 
     asyncio.run(scenario())
+
+
+def test_feed_subscribes_and_pumps_multiple_candle_intervals() -> None:
+    async def scenario():
+        registry = RealtimeHubRegistry()
+        hub = registry.hub("env-1")
+        client = hub.connect()
+        hub.subscribe(client, {Subscription(name="market.candle")})
+        clock = ManualClock()
+        business = FakeConnection(CANDLE_MESSAGE)
+        script = ConnectionScript(business)
+        feed = make_feed(
+            registry, clock, script, channels=("candle",),
+        )
+        feed.candle_intervals = ("1m", "5m")
+        run_task = asyncio.create_task(feed.run())
+        while len(client.buffer.snapshot()) < 1:
+            await asyncio.sleep(0)
+            if run_task.done():
+                break
+        await feed.stop()
+        await asyncio.wait_for(run_task, timeout=1)
+        subscribe_request = json.loads(business.sent[0])
+        channels = {argument["channel"] for argument in subscribe_request["args"]}
+        assert channels == {"candle1m", "candle5m"}
+        topics = [event.type for event in client.buffer.snapshot()]
+        assert "market.candle" in topics
+
+    asyncio.run(scenario())
+
+
+def test_feed_rejects_unsupported_candle_interval() -> None:
+    registry = RealtimeHubRegistry()
+    clock = ManualClock()
+    bridge = MarketRealtimeBridge(registry)
+    try:
+        OkxMarketFeed(
+            bridge,
+            environment_id="env-1",
+            instruments=(INSTRUMENT,),
+            channels=("candle",),
+            candle_intervals=("1m", "2m"),
+            connection_factory=ConnectionScript(),
+            now_ms=clock,
+        )
+    except ValueError as exc:
+        assert "2m" in str(exc)
+    else:
+        raise AssertionError("unsupported candle interval must be rejected")

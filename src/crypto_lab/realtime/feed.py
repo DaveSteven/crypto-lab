@@ -86,6 +86,7 @@ class OkxMarketFeed:
         instruments: Iterable[str],
         channels: Iterable[str] = ("ticker", "trade", "order_book"),
         candle_interval: str = "1m",
+        candle_intervals: tuple[str, ...] | None = None,
         url: str = OKX_PUBLIC_WS_URL,
         business_url: str = OKX_BUSINESS_WS_URL,
         connection_factory: ConnectionFactory = _default_connection,
@@ -102,6 +103,11 @@ class OkxMarketFeed:
         self.instruments = tuple(instruments)
         self.channels = tuple(channels)
         self.candle_interval = candle_interval
+        # OKX serves candles on the Business endpoint; multiple intervals ride
+        # the same business connection so the frontend can switch periods live.
+        self.candle_intervals = (
+            tuple(candle_intervals) if candle_intervals else (candle_interval,)
+        )
         self.url = url
         self.business_url = business_url
         self.connection_factory = connection_factory
@@ -116,6 +122,9 @@ class OkxMarketFeed:
             raise ValueError("feed requires at least one instrument")
         for instrument_id in self.instruments:
             _okx_instrument(instrument_id)
+        for interval in self.candle_intervals:
+            if interval not in OKX_CHANNEL:
+                raise ValueError(f"unsupported candle interval: {interval}")
         for channel in self.channels:
             if channel not in CHANNEL_REQUEST_NAME and channel != CANDLE_KIND:
                 raise ValueError(f"unsupported feed channel: {channel}")
@@ -139,14 +148,20 @@ class OkxMarketFeed:
         self._acknowledged: set[tuple[Any, Any]] = set()
 
     def _endpoint_plan(self) -> dict[str, tuple[str, ...]]:
-        """Map each OKX WebSocket endpoint to the channel kinds it serves."""
-        plan: dict[str, tuple[str, ...]] = {self.url: ()}
-        candle_channels = tuple(
+        """Map each OKX WebSocket endpoint to the channel kinds it serves.
+
+        Endpoints without channels are not connected at all.
+        """
+        plan: dict[str, tuple[str, ...]] = {}
+        non_candle_channels = tuple(
             channel for channel in self.channels if channel != CANDLE_KIND
         )
-        plan[self.url] = candle_channels
+        if non_candle_channels:
+            plan[self.url] = non_candle_channels
         if CANDLE_KIND in self.channels:
             plan[self.business_url] = (CANDLE_KIND,)
+        if not plan:
+            raise ValueError("feed requires at least one channel")
         return plan
 
     async def run(self) -> None:
@@ -239,12 +254,10 @@ class OkxMarketFeed:
             instrument = _okx_instrument(instrument_id)
             for channel in channels:
                 if channel == CANDLE_KIND:
-                    arguments.append(
-                        {
-                            "channel": OKX_CHANNEL[self.candle_interval],
-                            "instId": instrument,
-                        }
-                    )
+                    for interval in self.candle_intervals:
+                        arguments.append(
+                            {"channel": OKX_CHANNEL[interval], "instId": instrument}
+                        )
                 else:
                     arguments.append(
                         {"channel": CHANNEL_REQUEST_NAME[channel], "instId": instrument}
@@ -321,7 +334,7 @@ class OkxMarketFeed:
             elif channel in OKX_CHANNEL.values():
                 for event in normalize_okx_websocket_candles(payload, received_ts_ms=now_ms):
                     if (
-                        event.payload.interval == self.candle_interval
+                        event.payload.interval in self.candle_intervals
                         and event.instrument_id in self.instruments
                     ):
                         await self._publish_canonical(event, now_ms)
