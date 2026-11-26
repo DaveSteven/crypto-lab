@@ -3,6 +3,7 @@ import { TradingStateSync } from '@/api/sync'
 import { WSClient } from '@/api/ws'
 import type { TopicFilter } from '@/api/schemas'
 import { useConnectionStore } from '@/state/connectionStore'
+import { useMarketStore } from '@/state/marketStore'
 import { useTradingStore } from '@/state/tradingStore'
 
 export interface GatewayDeps {
@@ -60,6 +61,15 @@ export class RealtimeGateway {
     client.onMessage((message) => {
       if (!('event_ts_ms' in message)) return
       useConnectionStore.getState().update({ lastEventTsMs: message.event_ts_ms })
+      if (
+        message.type === 'market.ticker' ||
+        message.type === 'market.trade' ||
+        message.type === 'market.order_book' ||
+        message.type === 'market.candle' ||
+        message.type === 'market.quality'
+      ) {
+        useMarketStore.getState().applyMarketEvent(message)
+      }
     })
     client.onResync((reason) => useConnectionStore.getState().update({ resyncReason: reason }))
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSessionStore } from '@/state/sessionStore'
 import { useTradingStore } from '@/state/tradingStore'
+import { useMarketStore } from '@/state/marketStore'
 import { gateway } from '@/realtime/gateway'
 import { RestClient } from '@/api/rest'
 
@@ -41,6 +42,7 @@ export function EnvironmentGate({ children }: { children: React.ReactNode }) {
           onClick={() => {
             gateway.stop()
             useTradingStore.getState().reset()
+            useMarketStore.getState().reset()
             clearSession()
           }}
         >
