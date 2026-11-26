@@ -36,6 +36,7 @@ from crypto_lab.trading import (
     ManualClock,
     MarketRules,
     OrderBookExecutionService,
+    PortfolioEngine,
     SimulatedLiquidityView,
     TradeThroughEngine,
 )
@@ -219,6 +220,7 @@ class EnvironmentMarketDispatcher:
     def _apply_trade_to_environment(
         self, environment_id: str, event: MarketEventEnvelope[Trade]
     ) -> None:
+        new_trade_state: tuple | None = None
         trade_key = (
             f"{event.exchange_id.value}:{event.instrument_id}:trade:{event.payload.trade_id}"
         )
@@ -271,7 +273,9 @@ class EnvironmentMarketDispatcher:
                     (set(), set(), {}, tuple(prior_ordering_key))
                 )
             result = engine.process_trade(event, observed_ts_ms=self.now_ms())
-            self._environments[environment_id]["trade_state"] = engine.snapshot_state()
+            # The cache is updated only after the transaction commits; a
+            # rollback must leave the trade reprocessable.
+            new_trade_state = engine.snapshot_state()
             if result.status.value == "PROCESSED":
                 self.stats["trades_processed"] += 1
             else:
@@ -284,7 +288,8 @@ class EnvironmentMarketDispatcher:
                 ledger=ledger,
                 orders=orders,
                 executions=(*executions, *new_executions),
-                portfolio=store.restore_portfolio(environment_id),
+                # The projection must include this transaction's new fills.
+                portfolio=PortfolioEngine((*executions, *new_executions)),
             )
             store.persist_id_generator(environment_id, ids)
             state_version = store.bump_state_version(environment_id, clock.now_utc_ms())
@@ -304,6 +309,8 @@ class EnvironmentMarketDispatcher:
                 ],
                 created_ts_ms=self.now_ms(),
             )
+        if new_trade_state is not None:
+            self._environments[environment_id]["trade_state"] = new_trade_state
 
     def _run_due_for_environment(self, environment_id: str, now_ms: int) -> dict[str, Any]:
         executed: list[str] = []
@@ -351,12 +358,14 @@ class EnvironmentMarketDispatcher:
                         rejected.append(order_id)
                     else:
                         executed.append(order_id)
+                new_executions = simulator.executions()
                 store.persist_trading_state(
                     environment_id=environment_id,
                     ledger=ledger,
                     orders=orders,
-                    executions=(*executions_before, *simulator.executions()),
-                    portfolio=store.restore_portfolio(environment_id),
+                    executions=(*executions_before, *new_executions),
+                    # The projection must include this transaction's new fills.
+                    portfolio=PortfolioEngine((*executions_before, *new_executions)),
                     scheduler=scheduler,
                 )
                 store.persist_id_generator(environment_id, ids)

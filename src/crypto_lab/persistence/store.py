@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -272,7 +272,9 @@ class PostgresStore:
         self._upsert_balances(ledger)
         self._upsert_orders(environment_id, orders.orders())
         self._insert_executions(environment_id, executions)
-        self._upsert_positions(portfolio.positions(), executions)
+        self._upsert_positions(
+            portfolio.positions(), executions, account_id=ledger.account.account_id
+        )
         if scheduler is not None:
             self._replace_schedule(environment_id, ledger.account.account_id, scheduler)
 
@@ -304,16 +306,18 @@ class PostgresStore:
             .order_by(schema.ledger_entries.c.ledger_sequence)
         ).mappings()
         entries = tuple(
-            LedgerEntry(
-                entry_id=row["entry_id"],
-                account_id=row["account_id"],
-                exchange_id=ExchangeId(row["exchange_id"]),
-                asset=row["asset"],
-                available_delta=row["available_delta"],
-                locked_delta=row["locked_delta"],
-                reason=row["reason"],
-                reference_id=row["reference_id"],
-                created_ts_ms=row["created_ts_ms"],
+            _clean_model_decimals(
+                LedgerEntry(
+                    entry_id=row["entry_id"],
+                    account_id=row["account_id"],
+                    exchange_id=ExchangeId(row["exchange_id"]),
+                    asset=row["asset"],
+                    available_delta=row["available_delta"],
+                    locked_delta=row["locked_delta"],
+                    reason=row["reason"],
+                    reference_id=row["reference_id"],
+                    created_ts_ms=row["created_ts_ms"],
+                )
             )
             for row in rows
         )
@@ -337,8 +341,10 @@ class PostgresStore:
             .order_by(schema.paper_orders.c.order_sequence)
         ).mappings()
         restored = tuple(
-            PaperOrder.model_validate(
-                {key: value for key, value in row.items() if key != "environment_id"}
+            _clean_model_decimals(
+                PaperOrder.model_validate(
+                    {key: value for key, value in row.items() if key != "environment_id"}
+                )
             )
             for row in rows
         )
@@ -361,8 +367,10 @@ class PostgresStore:
         ).mappings()
         ignored = {"environment_id", "fill_sequence", "execution_sequence"}
         return tuple(
-            ExecutionRecord.model_validate(
-                {key: value for key, value in row.items() if key not in ignored}
+            _clean_model_decimals(
+                ExecutionRecord.model_validate(
+                    {key: value for key, value in row.items() if key not in ignored}
+                )
             )
             for row in rows
         )
@@ -373,8 +381,10 @@ class PostgresStore:
         persisted = self.session.execute(select(schema.positions)).mappings()
         expected = {position_key(position): position for position in portfolio.positions()}
         actual = {
-            (row["account_id"], row["instrument_id"]): Position.model_validate(
-                {key: value for key, value in row.items() if key != "last_execution_id"}
+            (row["account_id"], row["instrument_id"]): _clean_model_decimals(
+                Position.model_validate(
+                    {key: value for key, value in row.items() if key != "last_execution_id"}
+                )
             )
             for row in persisted
         }
@@ -495,9 +505,13 @@ class PostgresStore:
         liquidity = SimulatedLiquidityView(environment_id)
         liquidity.restore_state(
             (
-                _deserialize_book(row["market_book_json"]),
-                _restore_decimal_levels(row["residual_bids_json"]),
-                _restore_decimal_levels(row["residual_asks_json"]),
+                _clean_book(_deserialize_book(row["market_book_json"])),
+                _clean_decimal_levels(
+                    _restore_decimal_levels(row["residual_bids_json"])
+                ),
+                _clean_decimal_levels(
+                    _restore_decimal_levels(row["residual_asks_json"])
+                ),
                 set(row["consumption_ids_json"]),
             )
         )
@@ -527,9 +541,13 @@ class PostgresStore:
         liquidity = SimulatedLiquidityView(environment_id)
         liquidity.restore_state(
             (
-                _deserialize_book(row["market_book_json"]),
-                _restore_decimal_levels(row["residual_bids_json"]),
-                _restore_decimal_levels(row["residual_asks_json"]),
+                _clean_book(_deserialize_book(row["market_book_json"])),
+                _clean_decimal_levels(
+                    _restore_decimal_levels(row["residual_bids_json"])
+                ),
+                _clean_decimal_levels(
+                    _restore_decimal_levels(row["residual_asks_json"])
+                ),
                 set(row["consumption_ids_json"]),
             )
         )
@@ -686,11 +704,19 @@ class PostgresStore:
         self,
         positions: tuple[Position, ...],
         executions: tuple[ExecutionRecord, ...],
+        *,
+        account_id: str,
     ) -> None:
         last_execution: dict[tuple[str, str], str] = {}
         for execution in executions:
             last_execution[(execution.account_id, execution.instrument_id)] = execution.execution_id
-        for position in positions:
+        # A fully closed position rebuilds as a zero-quantity entry; the
+        # projection must not retain it as an open position.
+        open_positions = tuple(
+            position for position in positions if position.quantity != Decimal(0)
+        )
+        current_keys = [position_key(position) for position in open_positions]
+        for position in open_positions:
             values = position.model_dump(mode="python") | {
                 "last_execution_id": last_execution.get(position_key(position))
             }
@@ -704,6 +730,21 @@ class PostgresStore:
                 statement.on_conflict_do_update(
                     index_elements=["account_id", "instrument_id"], set_=updates
                 )
+            )
+        # The positions table is a projection of the Fill History rebuild; a
+        # fully closed position must disappear from the projection.
+        if current_keys:
+            self.session.execute(
+                delete(schema.positions).where(
+                    schema.positions.c.account_id == account_id,
+                    tuple_(schema.positions.c.account_id, schema.positions.c.instrument_id).not_in(
+                        current_keys
+                    ),
+                )
+            )
+        else:
+            self.session.execute(
+                delete(schema.positions).where(schema.positions.c.account_id == account_id)
             )
 
     def _replace_schedule(
@@ -774,6 +815,58 @@ class PostgresUnitOfWork:
 
 def position_key(position: Position) -> tuple[str, str]:
     return (position.account_id, position.instrument_id)
+
+
+def _clean_decimal(value: Decimal) -> Decimal:
+    """Strip meaningless NUMERIC(50,24) trailing-zero scale after a restore.
+
+    Values restored from NUMERIC(50,24) columns always carry 24 fractional
+    digits; multiplying such values in financial calculations accumulates
+    scale beyond the column limit even though the numeric value is unchanged.
+    """
+    normalized = value.normalize()
+    if normalized.as_tuple().exponent > 0:
+        normalized = normalized.quantize(Decimal(1))
+    return normalized
+
+
+def _clean_model_decimals[ModelT: Any](model: ModelT) -> ModelT:
+    updates = {
+        name: _clean_decimal(value)
+        for name in type(model).model_fields
+        if isinstance((value := getattr(model, name)), Decimal)
+    }
+    if not updates:
+        return model
+    return type(model).model_validate(model.model_dump() | updates)
+
+
+def _clean_decimal_levels(values: dict[Decimal, Decimal]) -> dict[Decimal, Decimal]:
+    return {_clean_decimal(price): _clean_decimal(quantity) for price, quantity in values.items()}
+
+
+def _clean_book(book: OrderBookView) -> OrderBookView:
+    return OrderBookView(
+        exchange_id=book.exchange_id,
+        instrument_id=book.instrument_id,
+        bids=tuple(
+            PriceLevel(price=_clean_decimal(level.price), quantity=_clean_decimal(level.quantity))
+            for level in book.bids
+        ),
+        asks=tuple(
+            PriceLevel(price=_clean_decimal(level.price), quantity=_clean_decimal(level.quantity))
+            for level in book.asks
+        ),
+        depth=book.depth,
+        sequence_id=book.sequence_id,
+        source_event_id=book.source_event_id,
+        exchange_ts_ms=book.exchange_ts_ms,
+        received_ts_ms=book.received_ts_ms,
+        quality_status=book.quality_status,
+        synchronized=book.synchronized,
+        source_connected=book.source_connected,
+        synchronization_generation=book.synchronization_generation,
+    )
 
 
 def _validate_financial_precision(
