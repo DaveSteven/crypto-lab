@@ -113,6 +113,12 @@ export class RealtimeGateway {
     this.sync = null
     this.connectedFor = null
   }
+
+  /** Manual resync entry (e.g. a refresh button next to the order list). */
+  resyncNow(): Promise<void> {
+    if (this.sync === null) return Promise.resolve()
+    return this.sync.resync()
+  }
 }
 
 export function websocketUrl(environmentId: string): string {
