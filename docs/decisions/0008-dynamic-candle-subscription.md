@@ -58,3 +58,13 @@ Task 1.12.6（Candlestick Chart）内实施，与 docs/12 §9.3"所有周期必�
 - 断线恢复：重连的订阅参数包含常驻 + 当前活跃动态频道（含宽限期内频道）。
 - 前端：`gateway.setCandleInterval` 随图表周期切换订阅新周期并退订上一个动态周期；1m 作为常驻频道始终订阅；`SUBSCRIPTION_LIMIT` 在图表下方提示“仅显示历史数据”。
 - 测试：`tests/realtime/test_candle_channels.py`（7 项）、`tests/api/test_market_feed_lifespan.py`（WS 接线）、前端 gateway 2 项。全部使用 stub/fake 连接；**未对真实 OKX Business 端点做动态 subscribe/unsubscribe 的实测**（状态：Documented，未 Verified）。
+
+## 真实行情验证（2026-11-26，OKX 公共端点，Verified）
+
+隔离数据库 `crypto_lab_verify` + 本地后端（Feed 开启，常驻 1m）：
+
+- WebSocket 客户端依次订阅 5m、1h：1m 之外的 `market.candle` 事件随即实时到达（15 秒内 5m 12～14 条、1h 15 条，均含当前未闭合 K 线更新）；退订后客户端不再收到。非法周期 `7m` 返回 `INVALID_CONTROL_MESSAGE`。
+- Feed 直连验证（宽限期缩短为 3 秒）：订阅 5m 持有期间收到 8 条；释放并过宽限后收到最后 11 条，此后 10 秒内 0 条新增，证明 OKX 端 unsubscribe 生效；期间 `invalid_messages=0`、`subscription_errors=0`、无重连，1m 常驻不受影响。
+- 浏览器（1440×900）：1m / 5m 图表显示 Volume、Last Price Line、OHLC 图例；5m 切换后现价线与最新 K 线一致；模拟市价买单成交后出现个人买入标记。
+- 未验证：`SUBSCRIPTION_LIMIT` 的真实触发（仅单元/接线测试）；断线重连后动态频道恢复（仅单元测试）；1h/4h/1d 的真实闭合 K 线边界。
+- 已知小问题：成交标记文字靠近最右侧 K 线时被价格轴裁切（纯展示，未处理）。
