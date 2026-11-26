@@ -78,6 +78,7 @@ export function OrdersPage() {
                 <th className="py-2 pr-3">时间</th>
                 <th className="py-2 pr-3">方向</th>
                 <th className="py-2 pr-3">类型</th>
+                <th className="py-2 pr-3">限价</th>
                 <th className="py-2 pr-3">状态</th>
                 <th className="py-2 pr-3">数量/已成交</th>
                 <th className="py-2 pr-3">均价</th>
@@ -94,6 +95,7 @@ export function OrdersPage() {
                   <td className="py-2 pr-3">{formatTime(order.submitted_ts_ms)}</td>
                   <td className="py-2 pr-3">{order.side === 'BUY' ? '买入' : '卖出'}</td>
                   <td className="py-2 pr-3">{order.order_type === 'MARKET' ? '市价' : '限价'}</td>
+                  <td className="py-2 pr-3">{formatDecimal(order.limit_price)}</td>
                   <td className="py-2 pr-3">{order.status}</td>
                   <td className="py-2 pr-3">
                     {formatDecimal(order.quantity)} / {formatDecimal(order.filled_quantity)}

@@ -18,6 +18,9 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind the loopback interface deterministically (IPv6-only binding made
+    // 127.0.0.1 probes fail during E2E).
+    host: '127.0.0.1',
     // Local-only backend (docs/09 §7): proxy avoids any CORS exposure.
     // Override with VITE_API_ORIGIN if the API runs on another port.
     proxy: {

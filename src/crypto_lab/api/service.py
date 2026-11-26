@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
@@ -31,6 +32,9 @@ from crypto_lab.trading import (
     create_paper_account,
 )
 from crypto_lab.trading.models import utc_now_ms
+
+
+logger = logging.getLogger(__name__)
 
 
 def _json_value(value: Any) -> Any:
@@ -531,6 +535,9 @@ class ApplicationService:
                 ).scalar_one_or_none()
                 return revision == "0003_realtime_state_version"
         except Exception:
+            # Reason is logged without secrets so operators can diagnose a
+            # 503 from /health/ready; the response itself stays opaque.
+            logger.warning("readiness check failed", exc_info=True)
             return False
 
     def _market_reference(
