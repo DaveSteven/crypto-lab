@@ -84,6 +84,22 @@ class PortfolioEngine:
     def positions(self) -> tuple[Position, ...]:
         return tuple(self._positions[key] for key in sorted(self._positions))
 
+    def snapshot_state(self) -> tuple[dict[tuple[str, str], Position], set[str]]:
+        return (self._positions.copy(), self._execution_ids.copy())
+
+    def restore_state(
+        self,
+        state: tuple[dict[tuple[str, str], Position], set[str]],
+    ) -> None:
+        positions, execution_ids = state
+        self._positions = positions.copy()
+        self._execution_ids = execution_ids.copy()
+
+    def rebuild(self, executions: tuple[ExecutionRecord, ...]) -> None:
+        rebuilt = PortfolioEngine(executions)
+        self._positions = rebuilt._positions
+        self._execution_ids = rebuilt._execution_ids
+
     def apply(self, execution: ExecutionRecord) -> Position:
         if execution.execution_id in self._execution_ids:
             raise ValueError(f"duplicate execution ID: {execution.execution_id}")
@@ -96,9 +112,7 @@ class PortfolioEngine:
 
         if execution.side is OrderSide.BUY:
             new_quantity = current.quantity + execution.quantity
-            new_cost_basis = (
-                current.cost_basis + execution.quote_amount + execution.fee_amount
-            )
+            new_cost_basis = current.cost_basis + execution.quote_amount + execution.fee_amount
             new_realized_pnl = current.realized_pnl
         else:
             if execution.quantity > current.quantity:
@@ -108,10 +122,7 @@ class PortfolioEngine:
             new_quantity = current.quantity - execution.quantity
             new_cost_basis = current.cost_basis - relieved_cost
             new_realized_pnl = (
-                current.realized_pnl
-                + execution.quote_amount
-                - execution.fee_amount
-                - relieved_cost
+                current.realized_pnl + execution.quote_amount - execution.fee_amount - relieved_cost
             )
             if new_quantity == 0:
                 new_cost_basis = Decimal(0)

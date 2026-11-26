@@ -9,6 +9,13 @@ from crypto_lab.trading.clock import (
 )
 from crypto_lab.trading.constraints import MarketRules, MarketRuleViolation
 from crypto_lab.trading.delayed_execution import DelayedExecutionOutcome, ScheduledOrderExecutor
+from crypto_lab.trading.event_processing import (
+    EventProcessingResult,
+    EventProcessingStatus,
+    SerialEventProcessor,
+    SimulationEvent,
+    SimulationEventKind,
+)
 from crypto_lab.trading.execution import (
     ExecutionAttempt,
     ExecutionRecord,
@@ -57,6 +64,7 @@ from crypto_lab.trading.trade_through import (
     TradeProcessingStatus,
     TradeThroughEngine,
 )
+from crypto_lab.trading.unit_of_work import InMemoryUnitOfWork, SnapshotParticipant
 
 __all__ = [
     "AccountLedger",
@@ -68,12 +76,15 @@ __all__ = [
     "ExecutionLatency",
     "ExecutionRecord",
     "ExecutionSimulator",
+    "EventProcessingResult",
+    "EventProcessingStatus",
     "ExecutionScheduler",
     "FeeSchedule",
     "FillLeg",
     "InsufficientBalanceError",
     "InsufficientPositionError",
     "IdGenerator",
+    "InMemoryUnitOfWork",
     "InvalidOrderTransitionError",
     "LedgerEntry",
     "LedgerReason",
@@ -102,8 +113,12 @@ __all__ = [
     "ScheduledExecution",
     "ScheduledOrderExecutor",
     "SchedulerRunResult",
+    "SerialEventProcessor",
     "SlippageMetrics",
     "SimulatedLiquidityView",
+    "SimulationEvent",
+    "SimulationEventKind",
+    "SnapshotParticipant",
     "SystemClock",
     "TimeInForce",
     "TradeAllocation",

@@ -48,6 +48,14 @@ class OrderService:
     def orders(self) -> tuple[PaperOrder, ...]:
         return tuple(self._orders.values())
 
+    def snapshot_state(self) -> tuple[dict[str, PaperOrder], int]:
+        return (self._orders.copy(), self._next_order_sequence)
+
+    def restore_state(self, state: tuple[dict[str, PaperOrder], int]) -> None:
+        orders, next_sequence = state
+        self._orders = orders.copy()
+        self._next_order_sequence = next_sequence
+
     def place(
         self,
         *,

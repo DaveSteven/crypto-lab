@@ -33,6 +33,19 @@ class ExecutionScheduler:
         self._scheduled: dict[str, ScheduledExecution] = {}
         self._completed: set[str] = set()
 
+    def snapshot_state(
+        self,
+    ) -> tuple[dict[str, ScheduledExecution], set[str]]:
+        return (self._scheduled.copy(), self._completed.copy())
+
+    def restore_state(
+        self,
+        state: tuple[dict[str, ScheduledExecution], set[str]],
+    ) -> None:
+        scheduled, completed = state
+        self._scheduled = scheduled.copy()
+        self._completed = completed.copy()
+
     def schedule(
         self,
         order_id: str,

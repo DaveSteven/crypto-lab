@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field, model_validator
@@ -16,6 +18,9 @@ from crypto_lab.trading.matching import MatchPlan, MatchStatus
 from crypto_lab.trading.models import FrozenModel, LedgerEntry, LedgerReason
 from crypto_lab.trading.order_service import OrderService, split_instrument
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
+
+if TYPE_CHECKING:
+    from crypto_lab.trading.portfolio import PortfolioEngine
 
 
 class LiquidityRole(StrEnum):
@@ -57,12 +62,26 @@ class ExecutionAttempt(FrozenModel):
 
 
 class ExecutionSimulator:
-    def __init__(self, orders: OrderService) -> None:
+    def __init__(
+        self,
+        orders: OrderService,
+        *,
+        portfolio: PortfolioEngine | None = None,
+        failure_injector: Callable[[str], None] | None = None,
+    ) -> None:
         self.orders = orders
+        self.portfolio = portfolio
+        self.failure_injector = failure_injector
         self._executions: list[ExecutionRecord] = []
 
     def executions(self) -> tuple[ExecutionRecord, ...]:
         return tuple(self._executions)
+
+    def snapshot_state(self) -> list[ExecutionRecord]:
+        return self._executions.copy()
+
+    def restore_state(self, state: list[ExecutionRecord]) -> None:
+        self._executions = state.copy()
 
     def execute_from_ticker(
         self,
@@ -213,9 +232,12 @@ class ExecutionSimulator:
             )
 
         self.orders.ledger.append_many(entries)
+        self._inject("LEDGER")
         self.orders.replace_after_execution(updated_order)
+        self._inject("ORDER")
         liquidity.consume(plan, consumption_id=consumption_id)
-        self._executions.extend(records)
+        self._inject("LIQUIDITY")
+        self._publish_records(records)
         return tuple(records)
 
     def execute_limit_match_plan(
@@ -322,9 +344,12 @@ class ExecutionSimulator:
             )
 
         self.orders.ledger.append_many(entries)
+        self._inject("LEDGER")
         self.orders.replace_after_execution(updated_order)
+        self._inject("ORDER")
         liquidity.consume(plan, consumption_id=consumption_id)
-        self._executions.extend(records)
+        self._inject("LIQUIDITY")
+        self._publish_records(records)
         return tuple(records)
 
     def execute(
@@ -410,8 +435,10 @@ class ExecutionSimulator:
             executed_ts_ms=executed_ts_ms,
         )
         self.orders.ledger.append_many(entries)
+        self._inject("LEDGER")
         self.orders.replace_after_execution(updated_order)
-        self._executions.append(record)
+        self._inject("ORDER")
+        self._publish_records((record,))
         return record
 
     def execute_passive_fill(
@@ -502,9 +529,25 @@ class ExecutionSimulator:
             market_event_id=market_event_id,
         )
         self.orders.ledger.append_many(entries)
+        self._inject("LEDGER")
         self.orders.replace_after_execution(updated_order)
-        self._executions.append(record)
+        self._inject("ORDER")
+        self._publish_records((record,))
         return record
+
+    def _publish_records(
+        self, records: tuple[ExecutionRecord, ...] | list[ExecutionRecord]
+    ) -> None:
+        if self.portfolio is not None:
+            for record in records:
+                self.portfolio.apply(record)
+            self._inject("PORTFOLIO")
+        self._executions.extend(records)
+        self._inject("FILL_HISTORY")
+
+    def _inject(self, stage: str) -> None:
+        if self.failure_injector is not None:
+            self.failure_injector(stage)
 
     def _settlement_entries(
         self,

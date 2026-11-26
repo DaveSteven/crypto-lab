@@ -14,6 +14,7 @@ from crypto_lab.trading.matching import MatchPlan
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.order_service import OrderService
 from crypto_lab.trading.orders import OrderSide, OrderType, PaperOrder
+from crypto_lab.trading.unit_of_work import InMemoryUnitOfWork
 
 
 class DelayedExecutionOutcome(FrozenModel):
@@ -41,11 +42,13 @@ class ScheduledOrderExecutor:
         market_state: OrderBookMarketState,
         market_execution: OrderBookExecutionService,
         limit_execution: LimitOrderExecutionService,
+        unit_of_work: InMemoryUnitOfWork | None = None,
     ) -> None:
         self.orders = orders
         self.market_state = market_state
         self.market_execution = market_execution
         self.limit_execution = limit_execution
+        self.unit_of_work = unit_of_work
         self._instructions: dict[str, _ExecutionInstruction] = {}
         self._outcomes: dict[str, DelayedExecutionOutcome] = {}
 
@@ -85,7 +88,26 @@ class ScheduledOrderExecutor:
     def outcome(self, order_id: str) -> DelayedExecutionOutcome:
         return self._outcomes[order_id]
 
+    def snapshot_state(
+        self,
+    ) -> tuple[dict[str, _ExecutionInstruction], dict[str, DelayedExecutionOutcome]]:
+        return (self._instructions.copy(), self._outcomes.copy())
+
+    def restore_state(
+        self,
+        state: tuple[dict[str, _ExecutionInstruction], dict[str, DelayedExecutionOutcome]],
+    ) -> None:
+        instructions, outcomes = state
+        self._instructions = instructions.copy()
+        self._outcomes = outcomes.copy()
+
     def __call__(self, order: PaperOrder, execution_ts_ms: int) -> None:
+        if self.unit_of_work is None:
+            self._execute(order, execution_ts_ms)
+            return
+        self.unit_of_work.run(lambda: self._execute(order, execution_ts_ms))
+
+    def _execute(self, order: PaperOrder, execution_ts_ms: int) -> None:
         try:
             instruction = self._instructions[order.order_id]
         except KeyError as exc:
@@ -117,50 +139,38 @@ class ScheduledOrderExecutor:
             executed_ts_ms=execution_ts_ms,
             execution_quote_event_id=book.source_event_id,
         )
-        try:
-            if order.order_type is OrderType.MARKET:
-                self.orders.enter_market(order.order_id, market_entry_ts_ms=execution_ts_ms)
-                result = self.market_execution.execute_market_order(
-                    order.order_id,
-                    exchange_id=instruction.exchange_id,
-                    instrument_id=order.instrument_id,
-                    decision_ts_ms=execution_ts_ms,
-                    max_book_age_ms=instruction.max_book_age_ms,
-                    fee_rate=instruction.fee_schedule.taker_rate,
-                    market_rules=instruction.market_rules,
-                    consumption_id=instruction.consumption_id,
-                    executed_ts_ms=execution_ts_ms,
-                )
-                if result.plan.filled_quantity == 0:
-                    outcome = "CANCELED"
-                elif result.plan.remaining_quantity:
-                    outcome = "PARTIAL_CANCELED"
-                else:
-                    outcome = "FILLED"
-            else:
-                result = self.limit_execution.enter_limit_order(
-                    order.order_id,
-                    exchange_id=instruction.exchange_id,
-                    instrument_id=order.instrument_id,
-                    market_entry_ts_ms=execution_ts_ms,
-                    max_book_age_ms=instruction.max_book_age_ms,
-                    fee_schedule=instruction.fee_schedule,
-                    market_rules=instruction.market_rules,
-                    consumption_id=instruction.consumption_id,
-                    executed_ts_ms=execution_ts_ms,
-                )
-                outcome = "RESTING" if result.resting else "FILLED"
-        except Exception as exc:
-            current = self.orders.get(order.order_id)
-            if current.filled_quantity == 0:
-                self.orders.reject(order.order_id, reason="EXECUTION_FAILED")
-            self._finish(
+        if order.order_type is OrderType.MARKET:
+            self.orders.enter_market(order.order_id, market_entry_ts_ms=execution_ts_ms)
+            result = self.market_execution.execute_market_order(
                 order.order_id,
-                outcome="FAILED",
-                reason=f"{type(exc).__name__}: {exc}",
-                execution_quote_event_id=book.source_event_id,
+                exchange_id=instruction.exchange_id,
+                instrument_id=order.instrument_id,
+                decision_ts_ms=execution_ts_ms,
+                max_book_age_ms=instruction.max_book_age_ms,
+                fee_rate=instruction.fee_schedule.taker_rate,
+                market_rules=instruction.market_rules,
+                consumption_id=instruction.consumption_id,
+                executed_ts_ms=execution_ts_ms,
             )
-            return
+            if result.plan.filled_quantity == 0:
+                outcome = "CANCELED"
+            elif result.plan.remaining_quantity:
+                outcome = "PARTIAL_CANCELED"
+            else:
+                outcome = "FILLED"
+        else:
+            result = self.limit_execution.enter_limit_order(
+                order.order_id,
+                exchange_id=instruction.exchange_id,
+                instrument_id=order.instrument_id,
+                market_entry_ts_ms=execution_ts_ms,
+                max_book_age_ms=instruction.max_book_age_ms,
+                fee_schedule=instruction.fee_schedule,
+                market_rules=instruction.market_rules,
+                consumption_id=instruction.consumption_id,
+                executed_ts_ms=execution_ts_ms,
+            )
+            outcome = "RESTING" if result.resting else "FILLED"
 
         self._finish(
             order.order_id,

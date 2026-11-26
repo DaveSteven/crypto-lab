@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from crypto_lab.market_data import OrderBookMarketState
 from crypto_lab.models import (
     DataQualityStatus,
@@ -15,8 +17,10 @@ from crypto_lab.trading import (
     ExecutionScheduler,
     ExecutionSimulator,
     FeeSchedule,
+    InMemoryUnitOfWork,
     LatencyPreset,
     LimitOrderExecutionService,
+    LiquidityError,
     ManualClock,
     MarketRules,
     OrderBookExecutionService,
@@ -72,11 +76,13 @@ def context(rules: MarketRules = RULES):
     simulator = ExecutionSimulator(orders)
     state = OrderBookMarketState()
     liquidity = SimulatedLiquidityView("delayed-run")
+    uow = InMemoryUnitOfWork((orders.ledger, orders, simulator, liquidity))
     executor = ScheduledOrderExecutor(
         orders=orders,
         market_state=state,
         market_execution=OrderBookExecutionService(state, simulator, liquidity),
         limit_execution=LimitOrderExecutionService(state, simulator, liquidity),
+        unit_of_work=uow,
     )
     scheduler = ExecutionScheduler(orders, clock)
     return clock, orders, state, liquidity, scheduler, executor, rules
@@ -167,11 +173,13 @@ def test_market_sell_with_insufficient_depth_partially_fills_and_releases_rest()
     simulator = ExecutionSimulator(orders)
     state = OrderBookMarketState()
     liquidity = SimulatedLiquidityView("sell-run")
+    uow = InMemoryUnitOfWork((orders.ledger, orders, simulator, liquidity))
     executor = ScheduledOrderExecutor(
         orders=orders,
         market_state=state,
         market_execution=OrderBookExecutionService(state, simulator, liquidity),
         limit_execution=LimitOrderExecutionService(state, simulator, liquidity),
+        unit_of_work=uow,
     )
     scheduler = ExecutionScheduler(orders, clock)
     order = orders.place(
@@ -309,7 +317,7 @@ def test_stale_book_rejects_without_execution() -> None:
     assert "stale" in executor.outcome(order.order_id).reason
 
 
-def test_settlement_validation_failure_does_not_consume_liquidity() -> None:
+def test_settlement_validation_failure_rolls_back_for_safe_retry() -> None:
     incompatible_rules = RULES.model_copy(update={"price_increment": Decimal("3")})
     clock, orders, state, liquidity, scheduler, executor, _ = context(incompatible_rules)
     order = orders.place(
@@ -325,9 +333,45 @@ def test_settlement_validation_failure_does_not_consume_liquidity() -> None:
     state.apply_snapshot(snapshot("bad-rules-book", ask="100", received_ts_ms=1_050))
     clock.advance(100)
 
-    scheduler.run_due(executor)
+    before_entries = orders.ledger.entries
+    with pytest.raises(ValueError, match="fill price"):
+        scheduler.run_due(executor)
 
-    assert orders.get(order.order_id).status is OrderStatus.REJECTED
-    assert executor.outcome(order.order_id).outcome == "FAILED"
-    assert liquidity.available_book().asks[0].quantity == Decimal("10")
-    assert orders.ledger.balance("USDT").locked == 0
+    assert orders.get(order.order_id).status is OrderStatus.PENDING_EXECUTION
+    assert orders.ledger.entries == before_entries
+    with pytest.raises(LiquidityError, match="not been initialized"):
+        liquidity.available_book()
+    assert orders.ledger.balance("USDT").locked == Decimal("101")
+    assert scheduler.due()[0].order_id == order.order_id
+
+
+def test_injected_liquidity_commit_failure_rolls_back_entire_execution() -> None:
+    clock, orders, state, liquidity, scheduler, executor, _ = context()
+    order = orders.place(
+        instrument_id=INSTRUMENT,
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        market_reference_price=Decimal("100"),
+        max_quote_budget=Decimal("101"),
+        fee_schedule=FEES,
+    )
+    register(scheduler, executor, order.order_id)
+    state.apply_snapshot(snapshot("liquidity-failure-book", ask="100", received_ts_ms=1_050))
+    clock.advance(100)
+
+    def inject(stage: str) -> None:
+        if stage == "LIQUIDITY":
+            raise RuntimeError("injected liquidity failure")
+
+    executor.market_execution.simulator.failure_injector = inject
+    before_entries = orders.ledger.entries
+
+    with pytest.raises(RuntimeError, match="liquidity"):
+        scheduler.run_due(executor)
+
+    assert orders.get(order.order_id).status is OrderStatus.PENDING_EXECUTION
+    assert orders.ledger.entries == before_entries
+    assert executor.market_execution.simulator.executions() == ()
+    with pytest.raises(LiquidityError, match="not been initialized"):
+        liquidity.available_book()

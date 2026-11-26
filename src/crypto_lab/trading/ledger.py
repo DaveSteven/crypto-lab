@@ -52,6 +52,18 @@ class AccountLedger:
     def balances(self) -> tuple[AssetBalance, ...]:
         return tuple(self._balances[asset] for asset in sorted(self._balances))
 
+    def snapshot_state(self) -> tuple[list[LedgerEntry], set[str], dict[str, AssetBalance]]:
+        return (self._entries.copy(), self._entry_ids.copy(), self._balances.copy())
+
+    def restore_state(
+        self,
+        state: tuple[list[LedgerEntry], set[str], dict[str, AssetBalance]],
+    ) -> None:
+        entries, entry_ids, balances = state
+        self._entries = entries.copy()
+        self._entry_ids = entry_ids.copy()
+        self._balances = balances.copy()
+
     def append(self, entry: LedgerEntry) -> None:
         self.append_many((entry,))
 

@@ -6,12 +6,15 @@ from crypto_lab.models import ExchangeId
 from crypto_lab.trading import (
     ExecutionLatency,
     ExecutionScheduler,
+    InMemoryUnitOfWork,
     LatencyPreset,
     ManualClock,
     OrderService,
     OrderSide,
     OrderStatus,
     OrderType,
+    SerialEventProcessor,
+    SimulationEventKind,
     create_paper_account,
 )
 
@@ -148,3 +151,33 @@ def test_due_handler_records_actual_delay_and_market_entry() -> None:
     assert entered.scheduler_lag_ms == 25
     assert entered.execution_quote_event_id == "execution-book"
     assert entered.market_entry_ts_ms == 1_125
+
+
+def test_scheduler_mutation_rolls_back_when_serial_event_fails() -> None:
+    _, orders, scheduler = setup_scheduler()
+    order = place(orders)
+    scheduler.schedule(
+        order.order_id,
+        latency=ExecutionLatency(preset=LatencyPreset.NORMAL),
+    )
+    events = SerialEventProcessor(
+        "run-1",
+        InMemoryUnitOfWork((orders.ledger, orders, scheduler)),
+    )
+
+    def cancel_then_fail() -> None:
+        scheduler.cancel(order.order_id)
+        raise RuntimeError("injected scheduler failure")
+
+    events.enqueue(
+        event_id="cancel-event",
+        timestamp_ms=1_050,
+        kind=SimulationEventKind.ORDER_CANCELLATION,
+        handler=cancel_then_fail,
+    )
+
+    with pytest.raises(RuntimeError, match="scheduler"):
+        events.process_next()
+
+    assert orders.get(order.order_id).status is OrderStatus.PENDING_EXECUTION
+    assert orders.ledger.balance("USDT").locked == Decimal("100")

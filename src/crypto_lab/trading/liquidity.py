@@ -82,6 +82,31 @@ class SimulatedLiquidityView:
             asks=_levels(self._residual_asks, descending=False),
         )
 
+    def snapshot_state(
+        self,
+    ) -> tuple[OrderBookView | None, dict[Decimal, Decimal], dict[Decimal, Decimal], set[str]]:
+        return (
+            self._market_book,
+            self._residual_bids.copy(),
+            self._residual_asks.copy(),
+            self._consumption_ids.copy(),
+        )
+
+    def restore_state(
+        self,
+        state: tuple[
+            OrderBookView | None,
+            dict[Decimal, Decimal],
+            dict[Decimal, Decimal],
+            set[str],
+        ],
+    ) -> None:
+        market_book, residual_bids, residual_asks, consumption_ids = state
+        self._market_book = market_book
+        self._residual_bids = residual_bids.copy()
+        self._residual_asks = residual_asks.copy()
+        self._consumption_ids = consumption_ids.copy()
+
     def consume(self, plan: MatchPlan, *, consumption_id: str) -> None:
         candidate = self._validated_candidate(plan, consumption_id=consumption_id)
         if plan.side is OrderSide.BUY:
