@@ -4,9 +4,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.3 |
+| 文档版本 | V0.4 |
 | 对应任务 | Phase 1 Task 1.5～1.8 |
-| 状态 | Active / Task 1.5～1.7 已实现 |
+| 状态 | Active / Task 1.5～1.8 已实现 |
 | 设计范围 | Python 领域层 |
 
 本文档同时记录设计与实施状态；只有明确标记“已完成”的能力才视为已经实现。核心原则是：AI 负责开发和解释，程序负责采集和计算。
@@ -315,6 +315,10 @@ Canonical Market Data → Market State → Order/Risk Validation
 
 Portfolio 属可重建投影。若当前阶段不能与事实记录同一原子提交，则先原子提交 Ledger、Order、Fill 和 Liquidity，再用 Fill History 重建或重放 Portfolio，并明确记录投影失败。Task 1.9 再映射至数据库事务及 Outbox/投影恢复机制。
 
+实现状态：已完成进程内 Snapshot/Restore Unit of Work。事务开始时只快照实际参与者的可变业务状态，不深拷贝完整原始行情；Market State 的当前不可变 View 映射、ManualClock、确定性 ID 计数、Ledger、Order、Fill History、Liquidity、Scheduler、事件登记和 Portfolio 均可参与事务。操作及提交钩子全部成功后才返回结果，任何异常按参与者逆序恢复并继续向调用方抛出，不以捕获异常后继续执行掩盖部分提交。
+
+Portfolio 在 Fill 发布阶段自动增量更新；失败由同一 Unit of Work 回滚。读取结果可由完整 Fill History 重建，增量与重建结果已验证一致。当前保证仅限进程内；崩溃恢复及数据库事务属于 Task 1.9。
+
 ### D.4 幂等与事件顺序
 
 需要唯一键或处理记录保护：`order_id` 执行轮次、`execution_id`、Ledger `entry_id`、市场 `event_id`、流动性消费 ID。已取消/完成订单不得重新进入执行。
@@ -329,16 +333,21 @@ Phase 1 使用单模拟环境串行事件处理器，按以下确定性顺序：
 
 该模型便于测试与历史回放；Phase 1 不引入分布式并发撮合。
 
+实现状态：已完成 `SerialEventProcessor`。同一时间戳先处理 Market Data，其余订单提交、取消、到期执行、Trade 与被动撮合按确定性到达序列处理，因此取消与成交竞争由进入串行队列的先后决定。事件处理成功后才写入去重登记；失败会恢复业务状态、事件队列和去重状态并允许使用相同业务 ID 安全重试。
+
+正式实验使用带模拟环境命名空间的 `DeterministicIdGenerator`。Order、Execution 及 Ledger Entry ID 在相同初始状态和事件序列下可复现；多档 Fill 使用独立 Execution ID，Entry ID 由账户、Execution、资产及流水原因稳定派生。外部真实行情的源 ID 仍以交易所数据为准，不为追求确定性而改写。
+
 ### D.5 Task 1.8 验收标准
 
-- [ ] 完整市价买卖、限价挂单、部分成交及取消流程。
-- [ ] 延迟期间价格变化及取消行为正确。
-- [ ] 订单簿失效后拒绝成交，多订单正确竞争流动性。
-- [ ] 余额不足、手续费、流水和持仓计算正确。
-- [ ] 流水可重建余额，成交可重建持仓。
-- [ ] 不产生负余额、超额卖出或重复成交。
-- [ ] 结果可确定性复现。
-- [ ] Task 1.1～1.4 回归测试全部通过。
+- [x] 完整市价买卖、限价挂单、部分成交及取消流程。
+- [x] 延迟期间价格变化及取消行为正确。
+- [x] 订单簿失效后拒绝成交，多订单正确竞争流动性。
+- [x] 余额不足、手续费、流水和持仓计算正确。
+- [x] 流水可重建余额，成交可重建持仓。
+- [x] 不产生负余额、超额卖出或重复成交。
+- [x] Ledger、Order、Fill、Liquidity、Portfolio、Scheduler 及事件登记失败可回滚。
+- [x] 结果及核心业务 ID 可确定性复现。
+- [x] Task 1.1～1.7 回归测试全部通过。
 
 ## Part E — 测试设计
 
@@ -431,6 +440,6 @@ Task 1.5～1.8 保持 Python 领域层开发，不引入 FastAPI、React、Postg
 
 ## Part J — 架构决策记录
 
-新增 Proposed ADR：[`decisions/0001-execution-engine-event-processing.md`](decisions/0001-execution-engine-event-processing.md)。原因是串行事件模型、权威来源、原子边界和流动性隔离会同时影响 Task 1.5～1.9，并决定未来回放及持久化兼容方式；在项目负责人确认前保持 Proposed，不视为已实现。
+Accepted ADR：[`decisions/0001-execution-engine-event-processing.md`](decisions/0001-execution-engine-event-processing.md)。串行事件模型、权威来源、原子边界、流动性隔离、Portfolio 投影及确定性身份已在 Task 1.8 实现。
 
 Task 1.7 的状态及预算策略由 Accepted ADR [`decisions/0003-delayed-execution-budget.md`](decisions/0003-delayed-execution-budget.md) 记录。
