@@ -70,14 +70,19 @@ describe('SettingsPage', () => {
   })
 
   test('states honestly what the backend does not provide', async () => {
+    const user = userEvent.setup()
     renderPage()
+    await user.click(await screen.findByRole('button', { name: '账户配置' }))
     expect(await screen.findByText(/默认执行延迟/)).toBeVisible()
-    expect(screen.getAllByText(/后端暂未提供/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/尚未实现账户级持久化/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '模拟环境' }))
     expect(screen.getByText(/不提供删除或重置环境/)).toBeVisible()
   })
 
   test('shows system status including a failed environment recovery', async () => {
+    const user = userEvent.setup()
     renderPage()
+    await user.click(await screen.findByRole('button', { name: '系统状态' }))
     expect(await screen.findByText('就绪')).toBeVisible()
     expect(await screen.findByText('1 个环境恢复失败')).toBeVisible()
     expect(screen.getByText(/env-2：RuntimeError: boom/)).toBeVisible()
@@ -89,6 +94,7 @@ describe('SettingsPage', () => {
     localStorage.setItem('react-resizable-panels:trading-workspace.v1', '{}')
     localStorage.setItem('crypto-lab.session', '{}')
     renderPage()
+    await user.click(await screen.findByRole('button', { name: '工作区' }))
     await user.click(screen.getByRole('button', { name: '恢复默认面板布局' }))
     expect(localStorage.getItem('react-resizable-panels:trading-workspace.v1')).toBeNull()
     expect(localStorage.getItem('crypto-lab.session')).toBe('{}')

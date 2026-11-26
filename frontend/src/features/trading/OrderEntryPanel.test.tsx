@@ -24,15 +24,19 @@ beforeEach(() => {
   useTradingStore.getState().reset()
   useTradingStore.setState({ synced: true }) // authoritative snapshot applied
   useConnectionStore.getState().update({ status: 'subscribed', resyncReason: null })
+  useInstrumentStore.getState().setInstrument('okx:SPOT:BTC/USDT')
 })
 
 describe('OrderEntryPanel', () => {
-  test('market buy requires the quote budget before submit', async () => {
+  test('market buy preview stays disabled until the required budget is valid', async () => {
     const user = userEvent.setup()
     render(<OrderEntryPanel />)
+    const preview = screen.getByRole('button', { name: '预览买入订单' })
+    expect(preview).toBeDisabled()
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
-    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('最大报价预算')
+    expect(preview).toBeDisabled()
+    await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
+    expect(preview).toBeEnabled()
   })
 
   test('submits order intent with idempotency key and shows server order state', async () => {
@@ -167,7 +171,7 @@ describe('OrderEntryPanel', () => {
     useTradingStore.setState({ balances: [{ asset: 'BTC', available: '2', locked: '0' }] })
     render(<OrderEntryPanel />)
     await user.click(screen.getByRole('button', { name: '卖出' }))
-    expect(screen.getByTestId('available-balance')).toHaveTextContent('2 BTC')
+    expect(screen.getByTestId('available-balance')).toHaveTextContent(/2\s*BTC/)
     await user.click(screen.getByRole('button', { name: '50%' }))
     expect(screen.getByLabelText('数量（BTC）')).toHaveValue('1')
   })
@@ -185,7 +189,7 @@ describe('OrderEntryPanel', () => {
     )
     render(<OrderEntryPanel />)
     await user.click(screen.getByRole('button', { name: '卖出' }))
-    expect(screen.getByTestId('available-balance')).toHaveTextContent('3 ETH')
+    expect(screen.getByTestId('available-balance')).toHaveTextContent(/3\s*ETH/)
     await user.type(screen.getByLabelText('数量（ETH）'), '1')
     await user.click(screen.getByRole('button', { name: '预览卖出订单' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('ETH/USDT')

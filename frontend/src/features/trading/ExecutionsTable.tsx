@@ -1,7 +1,7 @@
-import { formatDecimal, formatTime } from '@/shared/lib/format'
+import { formatTime, instrumentLabel } from '@/shared/lib/format'
 import { useTradingStore } from './tradingStore'
 import { useDetailStore } from './detailStore'
-import { Button, EmptyState } from '@/shared/ui'
+import { Button, EmptyState, FinancialValue } from '@/shared/ui'
 
 /** Fill History view (docs/12 §12.3): read-only, server-projected. */
 export function ExecutionsTable({ compact = false, limit }: { compact?: boolean; limit?: number }) {
@@ -33,17 +33,17 @@ export function ExecutionsTable({ compact = false, limit }: { compact?: boolean;
         {sorted.map((execution) => (
           <tr key={execution.execution_id} className="border-b border-line/50 hover:bg-elevated/40">
             <td className="py-1.5 pl-2 pr-2 text-left">{formatTime(execution.executed_ts_ms)}</td>
-            {!compact && <td className="py-1.5 pr-2 text-left">{execution.instrument_id}</td>}
+            {!compact && <td className="py-1.5 pr-2 text-left">{instrumentLabel(execution.instrument_id)}</td>}
             <td className="py-1.5 pr-2 text-left">
               <span className={execution.side === 'BUY' ? 'text-positive' : 'text-negative'}>
                 {execution.side === 'BUY' ? '买入' : '卖出'}
               </span>
             </td>
-            <td className="py-1.5 pr-2">{formatDecimal(execution.price)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(execution.quantity)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(execution.quote_amount)}</td>
+            <td className="py-1.5 pr-2"><FinancialValue value={execution.price} kind="price" instrumentId={execution.instrument_id} /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={execution.quantity} kind="quantity" instrumentId={execution.instrument_id} /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={execution.quote_amount} /></td>
             <td className="py-1.5 pr-2">
-              {formatDecimal(execution.fee_amount)} {execution.fee_asset}
+              <FinancialValue value={execution.fee_amount} kind="fee" unit={execution.fee_asset} />
             </td>
             <td className="py-1.5 pr-2 text-left text-ink-muted" title={`订单 ${execution.order_id}\n成交 ${execution.execution_id}`}>
               {execution.order_id.slice(0, 8)}… / {execution.execution_id.slice(0, 8)}…

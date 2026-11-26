@@ -23,8 +23,7 @@ import {
   latencyDisplay,
   QUANTITY_DECIMALS,
 } from './orderPreview'
-import { formatDecimal } from '@/shared/lib/format'
-import { Button, Dialog, Input, Label, Select, TermTip } from '@/shared/ui'
+import { Button, Dialog, FinancialValue, Input, Label, Select, TermTip } from '@/shared/ui'
 
 const EMPTY_FORM: OrderFormValues = {
   instrument_id: '',
@@ -64,6 +63,7 @@ export function OrderEntryPanel() {
   const accountSynced = useTradingStore((state) => state.synced)
   const tradable = marketOk && connected && accountSynced
   const preview = buildOrderPreview(values, quote)
+  const formValid = validateOrderForm(values).length === 0
 
   // A price picked from the order book switches the draft to LIMIT. Subscribing
   // only reacts to picks made after mount (stale picks are ignored).
@@ -209,7 +209,7 @@ export function OrderEntryPanel() {
         <p className="numeric flex justify-between text-[11px] text-ink-muted" data-testid="available-balance">
           <span>可用余额</span>
           <span>
-            {values.side === 'BUY' ? `${formatDecimal(availableQuote)} ${quoteAsset}` : `${formatDecimal(availableBase)} ${baseAsset}`}
+            {values.side === 'BUY' ? <FinancialValue value={availableQuote} unit={quoteAsset} /> : <FinancialValue value={availableBase} kind="quantity" instrumentId={INSTRUMENT} unit={baseAsset} />}
           </span>
         </p>
 
@@ -349,9 +349,9 @@ export function OrderEntryPanel() {
         )}
 
         <div className="rounded-[6px] border border-line bg-canvas/40 p-2 text-[11px]">
-          <div className="flex justify-between text-ink-secondary"><span>{preview.referenceLabel || '参考价'}</span><span className="numeric">{formatDecimal(preview.referencePrice)} {quoteAsset}</span></div>
-          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考交易金额</span><span className="numeric">{formatDecimal(preview.estimatedNotional)} {quoteAsset}</span></div>
-          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考手续费 <TermTip term="说明" description={`仅使用 ${REFERENCE_FEE_SCHEDULE} 的 ${REFERENCE_FEE_RATE} 做本地参考；真实模拟费用由服务端根据 Maker/Taker 决定。`} /></span><span className="numeric">{formatDecimal(preview.estimatedFee)} {quoteAsset}</span></div>
+          <div className="flex justify-between text-ink-secondary"><span>{preview.referenceLabel || '参考价'}</span><FinancialValue value={preview.referencePrice} kind="price" instrumentId={INSTRUMENT} unit={quoteAsset} /></div>
+          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考交易金额</span><FinancialValue value={preview.estimatedNotional} unit={quoteAsset} /></div>
+          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考手续费 <TermTip term="说明" description={`仅使用 ${REFERENCE_FEE_SCHEDULE} 的 ${REFERENCE_FEE_RATE} 做本地参考；真实模拟费用由服务端根据 Maker/Taker 决定。`} /></span><FinancialValue value={preview.estimatedFee} kind="fee" unit={quoteAsset} /></div>
         </div>
 
         </div>
@@ -362,7 +362,7 @@ export function OrderEntryPanel() {
           variant={values.side === 'BUY' ? 'buy' : 'sell'}
           className="w-full"
           type="submit"
-          disabled={submitting || !tradable || session === null}
+          disabled={submitting || !tradable || session === null || !formValid}
         >
           {submitting ? '提交中…' : values.side === 'BUY' ? '预览买入订单' : '预览卖出订单'}
         </Button>

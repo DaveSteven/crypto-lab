@@ -64,12 +64,13 @@ describe('MarketsPage', () => {
   test('lists only feed instruments with real ticker fields and -- for missing data', async () => {
     ticker('BTC', '61000', '60000', '1234.5')
     renderPage()
-    const btc = (await screen.findByText('BTC/USDT')).closest('tr')!
-    expect(within(btc).getByText('61000')).toBeVisible()
-    expect(within(btc).getByText('+1.67%')).toBeVisible()
+    const table = await screen.findByRole('table')
+    const btc = within(table).getByText('BTC/USDT').closest('tr')!
+    expect(within(btc).getByText('61,000.0')).toBeVisible()
+    expect(btc).toHaveTextContent(/1\.67\s*%/)
     expect(within(btc).getByText('有效')).toBeVisible() // live ticker, no degrade event
-    const eth = screen.getByText('ETH/USDT').closest('tr')!
-    expect(within(eth).getAllByText('--').length).toBeGreaterThanOrEqual(3)
+    const eth = within(table).getByText('ETH/USDT').closest('tr')!
+    expect(within(eth).getAllByText('—').length).toBeGreaterThanOrEqual(3)
     expect(within(eth).getByText('等待行情')).toBeVisible()
     expect(screen.queryByText('SOL/USDT')).toBeNull()
   })
@@ -78,14 +79,14 @@ describe('MarketsPage', () => {
     const user = userEvent.setup()
     ticker('ETH', '1700', '1600', '50')
     renderPage()
-    await screen.findByText('BTC/USDT')
+    const table = await screen.findByRole('table')
     await user.type(screen.getByLabelText('搜索交易对'), 'eth')
-    expect(screen.queryByText('BTC/USDT')).toBeNull()
-    expect(screen.getByText('ETH/USDT')).toBeVisible()
+    expect(within(table).queryByText('BTC/USDT')).toBeNull()
+    expect(within(table).getByText('ETH/USDT')).toBeVisible()
     await user.clear(screen.getByLabelText('搜索交易对'))
     await user.click(screen.getByRole('button', { name: '最新价' }))
     await user.click(screen.getByRole('button', { name: /最新价/ })) // descending
-    const rows = screen.getAllByRole('row').slice(1)
+    const rows = within(table).getAllByRole('row').slice(1)
     expect(within(rows[0]).getByText('ETH/USDT')).toBeVisible() // has a price
     expect(within(rows[1]).getByText('BTC/USDT')).toBeVisible() // missing price sorts last
   })

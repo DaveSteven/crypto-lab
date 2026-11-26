@@ -4,9 +4,11 @@ import { Link } from 'react-router-dom'
 import { useMarketStore } from '@/features/market/marketStore'
 import { realizedPnlByCurrency, useTradingStore } from '@/features/trading/tradingStore'
 import { ExecutionsTable } from '@/features/trading/ExecutionsTable'
-import { formatDecimal, formatTime } from '@/shared/lib/format'
-import { Badge, EmptyState, Panel, TermTip } from '@/shared/ui'
+import { formatTime, instrumentLabel } from '@/shared/lib/format'
+import { Badge, EmptyState, FinancialValue, PageContainer, PageHeader, Panel, TermTip } from '@/shared/ui'
 import { computeValuation, type BidQuote } from './valuation'
+
+const ASSET_TONES = ['bg-brand', 'bg-info', 'bg-positive', 'bg-warning', 'bg-negative']
 
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now())
@@ -19,36 +21,15 @@ function useNow(intervalMs: number): number {
 
 function signClass(value: string | null): string {
   if (value === null) return 'text-ink-muted'
-  const n = new Decimal(value)
-  return n.gt(0) ? 'text-positive' : n.lt(0) ? 'text-negative' : 'text-ink'
+  const number = new Decimal(value)
+  return number.gt(0) ? 'text-positive' : number.lt(0) ? 'text-negative' : 'text-ink-secondary'
 }
 
-function Metric({
-  label,
-  value,
-  tip,
-  tone,
-  testId,
-}: {
-  label: string
-  value: string
-  tip?: string
-  tone?: string
-  testId?: string
-}) {
-  return (
-    <div className="rounded-[4px] border border-line bg-surface p-3">
-      <div className="text-[11px] text-ink-muted">
-        {tip ? <TermTip term={label} description={tip} /> : label}
-      </div>
-      <div className={`numeric mt-1 text-lg font-semibold ${tone ?? 'text-ink'}`} data-testid={testId}>
-        {value}
-      </div>
-    </div>
-  )
+function Metric({ label, value, tip, primary = false, tone, testId }: { label: string; value: React.ReactNode; tip?: string; primary?: boolean; tone?: string; testId?: string }) {
+  return <div className={`rounded-[6px] border border-line bg-surface ${primary ? 'p-5' : 'p-4'}`}><div className="text-[12px] text-ink-muted">{tip ? <TermTip term={label} description={tip} /> : label}</div><div data-testid={testId} className={`${primary ? 'mt-2 text-[30px]' : 'mt-1.5 text-[20px]'} font-semibold ${tone ?? 'text-ink'}`}>{value}</div></div>
 }
 
-/** Overview (docs/12 §15): valuation is labelled with currency, data time and gaps; no PnL curve. */
+/** Authoritative balances/fills plus valid Bid valuation; no fabricated history. */
 export function OverviewPage() {
   const balances = useTradingStore((state) => state.balances)
   const positions = useTradingStore((state) => state.positions)
@@ -57,180 +38,45 @@ export function OverviewPage() {
   const orderBooks = useMarketStore((state) => state.orderBooks)
   const quality = useMarketStore((state) => state.quality)
   const now = useNow(1_000)
-
   const bids = useMemo(() => {
     const result: Record<string, BidQuote | undefined> = {}
     for (const [instrumentId, book] of Object.entries(orderBooks)) {
-      const status = quality[instrumentId]?.status ?? 'VALID'
       const best = [...book.bids].sort((a, b) => new Decimal(b.price).comparedTo(a.price))[0]
-      if (status === 'VALID' && best !== undefined) {
-        result[instrumentId] = { price: best.price, receivedTsMs: book.receivedTsMs }
-      }
+      if ((quality[instrumentId]?.status ?? 'VALID') === 'VALID' && best !== undefined) result[instrumentId] = { price: best.price, receivedTsMs: book.receivedTsMs }
     }
     return result
   }, [orderBooks, quality])
+  const valuation = computeValuation({ balances, positions, executions, bids, nowMs: now, realizedByCurrency: realizedPnlByCurrency(pnl) })
+  const realizedEntries = valuation.realizedByCurrency === null ? null : Object.entries(valuation.realizedByCurrency)
+  const positionValue = valuation.positions.reduce((sum, position) => sum.plus(position.marketValue ?? 0), new Decimal(0)).toString()
 
-  const valuation = computeValuation({
-    balances,
-    positions,
-    executions,
-    bids,
-    nowMs: now,
-    realizedByCurrency: realizedPnlByCurrency(pnl),
-  })
-  const realized = valuation.realizedByCurrency
-  const realizedEntries = realized === null ? null : Object.entries(realized)
+  return <PageContainer>
+    <PageHeader title="账户总览" description={<>估值币种 USDT · 估值依据为有效买一价（Bid），不使用最新成交价 · {valuation.valuationTsMs === null ? '等待有效行情' : `更新于 ${formatTime(valuation.valuationTsMs)}`}</>} />
+    {valuation.incomplete && <div className="mb-4"><Badge tone="warning" data-testid="valuation-incomplete">{valuation.unvaluable.length} 项资产暂时无法估值，总资产不包含这些资产</Badge></div>}
 
-  return (
-    <div className="h-full overflow-auto p-3">
-      <div className="mx-auto max-w-[1200px] space-y-3">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-          <span>估值币种 {valuation.currency}</span>
-          <span>·</span>
-          <span>
-            估值依据：有效买一价（Bid），不使用最新成交价 · 数据时间{' '}
-            {valuation.valuationTsMs === null ? '--' : formatTime(valuation.valuationTsMs)}
-          </span>
-          {valuation.incomplete && (
-            <Badge tone="warning" data-testid="valuation-incomplete">
-              含 {valuation.unvaluable.length} 项无法估值资产，总资产不含这些资产
-            </Badge>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-          <Metric
-            label={valuation.incomplete ? '总资产（不完整）' : '总资产'}
-            value={`${formatDecimal(valuation.totalAssets)} ${valuation.currency}`}
-            testId="total-assets"
-          />
-          <Metric label="可用资金" value={`${formatDecimal(valuation.available)} USDT`} />
-          <Metric
-            label="冻结资金"
-            value={`${formatDecimal(valuation.locked)} USDT`}
-            tip="已被挂单或待执行订单占用、暂时不能使用的资金。"
-          />
-          <Metric
-            label="已实现盈亏"
-            tip="账户自创建以来、已卖出部分的累计盈亏（含已完全平仓的持仓），按移动平均成本法由完整成交历史计算；不同币种分别显示，不相加。无法取得时显示 --，不用 0 代替。"
-            value={
-              realizedEntries === null
-                ? '--'
-                : realizedEntries.length === 0
-                  ? '0'
-                  : realizedEntries.map(([currency, amount]) => `${formatDecimal(amount)} ${currency}`).join(' · ')
-            }
-            tone={
-              realizedEntries !== null && realizedEntries.length === 1
-                ? signClass(realizedEntries[0][1])
-                : undefined
-            }
-            testId="realized-pnl"
-          />
-          <Metric
-            label="未实现盈亏"
-            tip="按当前有效买一价估算的持仓市值减去成本；只是账面估算，未真正卖出。行情失效时显示 --。"
-            value={valuation.unrealizedPnl === null ? '--' : `${formatDecimal(valuation.unrealizedPnl)} USDT`}
-            tone={signClass(valuation.unrealizedPnl)}
-          />
-          <Metric
-            label="累计手续费"
-            value={
-              valuation.feesByAsset.length === 0
-                ? '0'
-                : valuation.feesByAsset.map((f) => `${formatDecimal(f.amount)} ${f.asset}`).join(' · ')
-            }
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <Panel title="资产分布">
-            {valuation.assets.length === 0 ? (
-              <EmptyState message="暂无资产。" />
-            ) : (
-              <ul className="space-y-2 p-3 text-xs">
-                {valuation.assets
-                  .filter((asset) => asset.value !== '0')
-                  .map((asset) => (
-                    <li key={asset.asset}>
-                      <div className="numeric flex justify-between">
-                        <span>{asset.asset}</span>
-                        <span>
-                          {formatDecimal(asset.value)} {valuation.currency} · {asset.share ?? '--'}%
-                        </span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded bg-elevated">
-                        <div
-                          className="h-full rounded bg-brand"
-                          style={{ width: `${asset.share ?? 0}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-              </ul>
-            )}
-            {valuation.unvaluable.length > 0 && (
-              <div role="status" className="border-t border-line p-3 text-xs" data-testid="unvaluable">
-                <p className="mb-1 font-medium text-warning">无法估值的资产</p>
-                <ul className="space-y-0.5 text-ink-secondary">
-                  {valuation.unvaluable.map((asset) => (
-                    <li key={asset.asset} className="numeric">
-                      {asset.asset} {formatDecimal(asset.total)} — {asset.reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="当前持仓">
-            {valuation.positions.length === 0 ? (
-              <EmptyState message="暂无持仓。" />
-            ) : (
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-line text-[11px] text-ink-muted">
-                    <th className="py-1.5 pl-3 pr-2">品种</th>
-                    <th className="py-1.5 pr-2 text-right">数量</th>
-                    <th className="py-1.5 pr-2 text-right">成本</th>
-                    <th className="py-1.5 pr-2 text-right">市值（Bid）</th>
-                    <th className="py-1.5 pr-3 text-right">未实现盈亏</th>
-                  </tr>
-                </thead>
-                <tbody className="numeric">
-                  {valuation.positions.map((position) => (
-                    <tr key={position.instrumentId} className="border-b border-line/50">
-                      <td className="py-1.5 pl-3 pr-2 text-left">{position.instrumentId}</td>
-                      <td className="py-1.5 pr-2">{formatDecimal(position.quantity)}</td>
-                      <td className="py-1.5 pr-2">{formatDecimal(position.costBasis)}</td>
-                      <td className="py-1.5 pr-2">
-                        {position.marketValue === null ? '--' : formatDecimal(position.marketValue)}
-                      </td>
-                      <td className={`py-1.5 pr-3 ${signClass(position.unrealizedPnl)}`}>
-                        {position.unrealizedPnl === null ? '--' : formatDecimal(position.unrealizedPnl)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Panel>
-        </div>
-
-        <Panel
-          title="最近模拟成交"
-          actions={
-            <Link to="/trading" className="text-[11px] text-brand hover:underline">
-              前往交易
-            </Link>
-          }
-        >
-          <ExecutionsTable limit={5} />
-        </Panel>
-        <p className="text-[11px] text-ink-muted">
-          以上均为模拟资产与账面估算，不代表真实收益；暂不提供收益曲线（尚无可靠历史快照）。
-        </p>
-      </div>
+    <div className="grid grid-cols-4 gap-4">
+      <div className="col-span-2"><Metric primary testId="total-assets" label={valuation.incomplete ? '总资产（估值不完整）' : '总资产'} value={<FinancialValue value={valuation.totalAssets} unit={valuation.currency} />} /></div>
+      <Metric label="可用资金" value={<FinancialValue value={valuation.available} unit="USDT" />} />
+      <Metric label="持仓市值" value={<FinancialValue value={positionValue} unit="USDT" />} />
     </div>
-  )
+    <div className="mt-4 grid grid-cols-4 gap-4">
+      <Metric label="冻结资金" tip="挂单或待执行订单占用的资金。" value={<FinancialValue value={valuation.locked} unit="USDT" />} />
+      <Metric testId="realized-pnl" label="累计已实现盈亏" tip="由完整成交历史按移动平均成本法重建；不同币种不相加。" value={realizedEntries === null ? '—' : realizedEntries.length === 0 ? <FinancialValue value="0" unit="USDT" /> : realizedEntries.map(([currency, amount], index) => <span key={currency} className={signClass(amount)}>{index > 0 && <span className="mx-1 text-ink-muted">·</span>}<FinancialValue value={amount} unit={currency} /></span>)} tone={realizedEntries?.length === 1 ? signClass(realizedEntries[0][1]) : undefined} />
+      <Metric label="未实现盈亏" tip="有效买一价估算的持仓市值减去成本。" value={valuation.unrealizedPnl === null ? '—' : <FinancialValue value={valuation.unrealizedPnl} unit="USDT" />} tone={signClass(valuation.unrealizedPnl)} />
+      <Metric label="累计手续费" value={valuation.feesByAsset.length === 0 ? <FinancialValue value="0" unit="USDT" kind="fee" /> : valuation.feesByAsset.map((fee) => <FinancialValue key={fee.asset} value={fee.amount} unit={fee.asset} kind="fee" />)} />
+    </div>
+
+    <div className="mt-5 grid grid-cols-2 gap-5">
+      <Panel title="资产分布" bodyClassName="p-4">
+        {valuation.assets.filter((asset) => asset.value !== '0').length === 0 ? <EmptyState message="暂无可展示资产。" /> : <><div className="flex h-3 overflow-hidden rounded-full bg-elevated" aria-label="资产估值分布">{valuation.assets.filter((asset) => asset.value !== '0').map((asset, index) => <div key={asset.asset} className={ASSET_TONES[index % ASSET_TONES.length]} style={{ width: `${asset.share ?? 0}%` }} title={`${asset.asset} ${asset.share ?? '—'}%`} />)}</div><ul className="mt-4 space-y-3 text-[13px]">{valuation.assets.filter((asset) => asset.value !== '0').map((asset, index) => <li key={asset.asset} className="flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${ASSET_TONES[index % ASSET_TONES.length]}`} /><strong className="w-14 text-ink">{asset.asset}</strong><span className="ml-auto"><FinancialValue value={asset.value} unit={valuation.currency} /></span><span className="numeric w-16 text-right text-ink-muted">{asset.share ?? '—'}%</span></li>)}</ul></>}
+        {valuation.unvaluable.length > 0 && <div role="status" className="mt-4 border-t border-line pt-3 text-[12px] text-warning" data-testid="unvaluable">无法估值：{valuation.unvaluable.map((asset) => `${asset.asset} ${asset.total}（${asset.reason}）`).join('、')}</div>}
+      </Panel>
+
+      <Panel title="当前持仓">
+        {valuation.positions.length === 0 ? <EmptyState message="暂无持仓。完成模拟买入后，持仓会显示在这里。" /> : <table className="w-full text-[13px]"><thead><tr className="border-b border-line text-[12px] text-ink-muted"><th className="px-4 py-2.5 text-left">交易对</th><th className="py-2.5 text-right">数量</th><th className="py-2.5 text-right">平均成本</th><th className="py-2.5 text-right">总持仓成本</th><th className="px-4 py-2.5 text-right">未实现盈亏</th></tr></thead><tbody>{valuation.positions.map((position) => { const average = new Decimal(position.quantity).isZero() ? null : new Decimal(position.costBasis).div(position.quantity).toString(); return <tr key={position.instrumentId} className="border-b border-line/50"><td className="px-4 py-3 font-medium text-ink">{instrumentLabel(position.instrumentId)}</td><td className="py-3 text-right"><FinancialValue value={position.quantity} kind="quantity" instrumentId={position.instrumentId} /></td><td className="py-3 text-right"><FinancialValue value={average} kind="price" instrumentId={position.instrumentId} unit="USDT" /></td><td className="py-3 text-right"><FinancialValue value={position.costBasis} unit="USDT" /></td><td className={`px-4 py-3 text-right ${signClass(position.unrealizedPnl)}`}>{position.unrealizedPnl === null ? '—' : <FinancialValue value={position.unrealizedPnl} unit="USDT" />}</td></tr> })}</tbody></table>}
+      </Panel>
+    </div>
+    <Panel className="mt-5" title="最近模拟成交" actions={<Link to="/trading" className="text-[13px] font-medium text-brand hover:text-brand-hover">前往交易</Link>}><ExecutionsTable limit={5} /></Panel>
+    <p className="mt-3 text-[12px] text-ink-muted">以上均为模拟资产与账面估算，不代表真实收益；没有可靠历史快照，因此暂不提供收益曲线。</p>
+  </PageContainer>
 }

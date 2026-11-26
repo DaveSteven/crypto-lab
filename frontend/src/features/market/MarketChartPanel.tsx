@@ -25,7 +25,7 @@ import {
 } from './candles'
 import { change24h } from './ticker'
 import { DEFAULT_INSTRUMENT, useInstrument } from './instrumentStore'
-import { Badge, Button } from '@/shared/ui'
+import { Badge, Button, FinancialValue } from '@/shared/ui'
 
 export const INSTRUMENT = DEFAULT_INSTRUMENT
 const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const
@@ -252,20 +252,20 @@ export function MarketChartPanel() {
           </a>
         </div>
         <div className="min-w-[150px]">
-          <span className="numeric block text-[26px] font-semibold leading-none text-ink">{ticker?.ticker.last ?? '—'}</span>
-          <span className="numeric mt-1.5 block text-[11px] text-ink-secondary">Bid {ticker?.ticker.bid ?? '—'} · Ask {ticker?.ticker.ask ?? '—'}</span>
+          <FinancialValue className="block text-[26px] font-semibold leading-none text-ink" value={ticker?.ticker.last} kind="price" instrumentId={instrument} />
+          <span className="mt-1.5 block text-[11px] text-ink-secondary">Bid <FinancialValue value={ticker?.ticker.bid} kind="price" instrumentId={instrument} /> · Ask <FinancialValue value={ticker?.ticker.ask} kind="price" instrumentId={instrument} /></span>
         </div>
         {(() => {
           const change = change24h(ticker?.ticker.last, ticker?.ticker.open_24h)
           if (change === null) return <div className="min-w-[90px]"><span className="block text-[11px] text-ink-muted">24h 涨跌</span><span className="numeric text-[14px] text-ink-muted">--</span></div>
           const up = !change.percent.startsWith('-')
           return (
-            <div className="min-w-[90px]"><span className="block text-[11px] text-ink-muted">24h 涨跌</span><span className={`numeric text-[14px] font-medium ${up ? 'text-positive' : 'text-negative'}`}>{up ? '+' : ''}{change.percent}%</span></div>
+            <div className="min-w-[90px]"><span className="block text-[11px] text-ink-muted">24h 涨跌</span><FinancialValue className={`text-[14px] font-medium ${up ? 'text-positive' : 'text-negative'}`} value={change.percent} kind="percent" unit="%" /></div>
           )
         })()}
-        <div><span className="block text-[11px] text-ink-muted">24h 最高</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.high_24h ?? '--'}</span></div>
-        <div><span className="block text-[11px] text-ink-muted">24h 最低</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.low_24h ?? '--'}</span></div>
-        <div><span className="block text-[11px] text-ink-muted">24h 成交量 ({base})</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.base_volume_24h ?? '--'}</span></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 最高</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.high_24h} kind="price" instrumentId={instrument} /></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 最低</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.low_24h} kind="price" instrumentId={instrument} /></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 成交量 ({base})</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.base_volume_24h} kind="quantity" instrumentId={instrument} /></div>
         <div className="ml-auto text-right">
           <Badge tone={qualityOk ? 'positive' : 'negative'} title={quality?.reason}>{QUALITY_LABEL[quality?.status ?? 'VALID'] ?? quality?.status}</Badge>
           <span className="mt-1 block text-[11px] text-ink-muted">OKX 公共行情 · {formatTime(ticker?.eventTsMs)}</span>

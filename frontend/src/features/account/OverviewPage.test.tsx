@@ -73,7 +73,7 @@ describe('OverviewPage', () => {
     renderPage()
     expect(screen.getByText(/估值币种 USDT/)).toBeVisible()
     expect(screen.getByText(/不使用最新成交价/)).toBeVisible()
-    expect(screen.getByTestId('total-assets')).toHaveTextContent('500 USDT')
+    expect(screen.getByTestId('total-assets')).toHaveTextContent(/500\.00\s*USDT/)
     expect(screen.getByText(/暂不提供收益曲线/)).toBeVisible()
   })
 
@@ -83,7 +83,7 @@ describe('OverviewPage', () => {
       .applySnapshot(snapshot([{ asset: 'USDT', available: '100', locked: '0' }, { asset: 'BTC', available: '2', locked: '0' }]))
     book(NOW - 500)
     renderPage()
-    expect(screen.getByTestId('total-assets')).toHaveTextContent('2100 USDT')
+    expect(screen.getByTestId('total-assets')).toHaveTextContent(/2,100\.00\s*USDT/)
     expect(screen.queryByTestId('valuation-incomplete')).toBeNull()
   })
 
@@ -92,10 +92,10 @@ describe('OverviewPage', () => {
       .getState()
       .applySnapshot(snapshot([{ asset: 'USDT', available: '100', locked: '0' }, { asset: 'BTC', available: '2', locked: '0' }]))
     renderPage()
-    expect(screen.getByTestId('valuation-incomplete')).toHaveTextContent('1 项无法估值')
+    expect(screen.getByTestId('valuation-incomplete')).toHaveTextContent('1 项资产暂时无法估值')
     expect(screen.getByTestId('unvaluable')).toHaveTextContent('BTC 2')
-    expect(screen.getByTestId('total-assets')).toHaveTextContent('100 USDT')
-    expect(screen.getByText('总资产（不完整）')).toBeVisible()
+    expect(screen.getByTestId('total-assets')).toHaveTextContent(/100\.00\s*USDT/)
+    expect(screen.getByText('总资产（估值不完整）')).toBeVisible()
   })
 
   test('a bid from a non-VALID market is not used for valuation', () => {
@@ -126,19 +126,19 @@ describe('OverviewPage', () => {
         snapshot([{ asset: 'USDT', available: '10009.79', locked: '0' }], pnlOf([[INSTRUMENT, 'USDT', '9.79']])),
       )
     renderPage()
-    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('9.79 USDT')
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/9\.79\s*USDT/)
   })
 
   test('a new account shows a legitimate zero, a loss shows a negative number', () => {
     useTradingStore.getState().applySnapshot(snapshot([{ asset: 'USDT', available: '10000', locked: '0' }], pnlOf([])))
     const view = renderPage()
-    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/^0$/)
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/0\.00\s*USDT/)
     view.unmount()
     useTradingStore
       .getState()
       .applySnapshot(snapshot([{ asset: 'USDT', available: '9990', locked: '0' }], pnlOf([[INSTRUMENT, 'USDT', '-10.19']])))
     renderPage()
-    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('-10.19 USDT')
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/-10\.19\s*USDT/)
   })
 
   test('currencies are shown separately and unavailable PnL is "--" not 0', () => {
@@ -152,13 +152,13 @@ describe('OverviewPage', () => {
       ),
     )
     const view = renderPage()
-    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('4 USDT · -1000 JPY')
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent(/4\.00\s*USDT·-1,000\.00\s*JPY/)
     view.unmount()
     useTradingStore.getState().applySnapshot(
       snapshot([{ asset: 'USDT', available: '1', locked: '0' }], { status: 'UNAVAILABLE', reason: 'x' }),
     )
     renderPage()
-    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('--')
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('—')
   })
 
   test('BTC and ETH held together are both valued from their own valid bids', () => {
@@ -191,7 +191,7 @@ describe('OverviewPage', () => {
       instrument_id: 'okx:SPOT:ETH/USDT',
     } as never)
     renderPage()
-    expect(screen.getByTestId('total-assets')).toHaveTextContent('1650 USDT') // 150 + 1000 + 500
+    expect(screen.getByTestId('total-assets')).toHaveTextContent(/1,650\.00\s*USDT/) // 150 + 1000 + 500
     expect(screen.queryByTestId('valuation-incomplete')).toBeNull()
   })
 })

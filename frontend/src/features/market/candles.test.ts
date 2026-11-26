@@ -158,6 +158,6 @@ describe('volume and trade markers', () => {
     const buy = markers.find((m) => m.side === 'BUY')!
     expect(buy.time).toBe(60)
     expect(buy.executionIds).toEqual(['a', 'b'])
-    expect(buy.text).toContain('0.2')
+    expect(buy.text).toBe('买 ×2')
   })
 })

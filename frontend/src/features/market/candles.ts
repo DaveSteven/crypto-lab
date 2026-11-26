@@ -1,4 +1,3 @@
-import Decimal from 'decimal.js'
 import type { Candle } from '@/shared/api/schemas'
 
 export interface CandleBar {
@@ -193,11 +192,10 @@ export function buildTradeMarkers(
   for (const [key, group] of groups) {
     const [bucket] = key.split('|')
     const side = group[0].side
-    const qty = group.reduce((sum, f) => sum.plus(f.quantity), new Decimal(0))
     markers.push({
       time: Math.floor(Number(bucket) / 1_000),
       side,
-      text: `${side === 'BUY' ? '买' : '卖'} ${qty.toString()}${group.length > 1 ? ` ×${group.length}` : ''}`,
+      text: `${side === 'BUY' ? '买' : '卖'}${group.length > 1 ? ` ×${group.length}` : ''}`,
       executionIds: group.map((f) => f.execution_id),
       orderIds: [...new Set(group.map((f) => f.order_id))],
     })

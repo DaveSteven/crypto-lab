@@ -7,8 +7,7 @@ import { useMarketStore } from './marketStore'
 import { useInstrumentStore } from './instrumentStore'
 import { change24h } from './ticker'
 import { useSessionStore } from '@/app/sessionStore'
-import { formatDecimal } from '@/shared/lib/format'
-import { Badge, EmptyState, ErrorState, Input, Panel } from '@/shared/ui'
+import { Badge, Button, EmptyState, ErrorState, FinancialValue, Input, PageContainer, PageHeader, Panel } from '@/shared/ui'
 import { cn } from '@/shared/lib/utils'
 
 const rest = new RestClient()
@@ -106,13 +105,22 @@ export function MarketsPage() {
   )
 
   return (
-    <div className="h-full overflow-auto p-3">
-      <div className="mx-auto max-w-[1000px]">
+    <PageContainer>
+      <PageHeader title="市场行情" description="仅展示当前行情 Feed 已接入的真实现货市场，不生成虚假走势。" />
+      <div className="mb-5 grid grid-cols-2 gap-4">
+        {rows.slice(0, 2).map((row) => (
+          <div key={row.instrumentId} className="rounded-[6px] border border-line bg-surface p-5">
+            <div className="flex items-start justify-between"><div><h2 className="text-[18px] font-semibold text-ink">{row.symbol}</h2><p className="mt-1 text-[12px] text-ink-muted">{row.exchange} · 现货</p></div><Badge tone={row.quality === 'VALID' ? 'positive' : 'negative'}>{row.quality === 'VALID' ? '行情有效' : '等待有效行情'}</Badge></div>
+            <div className="mt-4 flex items-end justify-between"><FinancialValue className="text-[26px] font-semibold text-ink" value={row.last} kind="price" instrumentId={row.instrumentId} unit="USDT" /><div className={cn('text-[16px] font-medium', row.change === null ? 'text-ink-muted' : row.change.startsWith('-') ? 'text-negative' : 'text-positive')}>{row.change === null ? '—' : <FinancialValue value={row.change} kind="percent" unit="%" />}</div></div>
+            <div className="mt-3 flex items-center justify-between text-[12px] text-ink-muted"><span>24h 成交量 <FinancialValue value={row.volume} kind="quantity" instrumentId={row.instrumentId} unit={row.symbol.split('/')[0]} /></span><Button size="compact" variant="outline" onClick={() => open(row)}>前往交易</Button></div>
+          </div>
+        ))}
+      </div>
         <Panel
-          title="市场"
+          title="已接入市场"
           actions={
             <Input
-              className="h-7 w-48 text-xs"
+              className="h-8 w-56 text-[13px]"
               placeholder="搜索交易对"
               aria-label="搜索交易对"
               value={search}
@@ -127,10 +135,10 @@ export function MarketsPage() {
           ) : query.data.items.length === 0 ? (
             <EmptyState message={query.data.feed_enabled ? '暂无已接入的品种。' : '行情 Feed 未启用，没有可展示的市场。'} />
           ) : (
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-[13px]">
               <caption className="sr-only">已接入的现货市场</caption>
               <thead>
-                <tr className="border-b border-line text-[11px] text-ink-muted">
+                <tr className="border-b border-line text-[12px] text-ink-muted">
                   {header('instrument', '交易对', false)}
                   <th className="py-2 pr-3">交易所</th>
                   {header('last', '最新价')}
@@ -146,7 +154,7 @@ export function MarketsPage() {
                     className="cursor-pointer border-b border-line/50 hover:bg-elevated/40"
                     onClick={() => open(row)}
                   >
-                    <td className="py-2 pl-3 pr-3 text-left">
+                    <td className="py-3 pl-4 pr-3 text-left">
                       <button
                         type="button"
                         className="font-medium text-brand hover:underline"
@@ -158,18 +166,18 @@ export function MarketsPage() {
                         {row.symbol}
                       </button>
                     </td>
-                    <td className="py-2 pr-3 text-left text-ink-secondary">{row.exchange} · 现货</td>
-                    <td className="py-2 pr-3">{row.last === null ? '--' : formatDecimal(row.last)}</td>
+                    <td className="py-3 pr-3 text-left text-ink-secondary">{row.exchange} · 现货</td>
+                    <td className="py-3 pr-3"><FinancialValue value={row.last} kind="price" instrumentId={row.instrumentId} unit="USDT" /></td>
                     <td
                       className={cn(
-                        'py-2 pr-3',
+                        'py-3 pr-3',
                         row.change === null ? 'text-ink-muted' : row.change.startsWith('-') ? 'text-negative' : 'text-positive',
                       )}
                     >
-                      {row.change === null ? '--' : `${row.change.startsWith('-') ? '' : '+'}${row.change}%`}
+                      <FinancialValue value={row.change} kind="percent" unit="%" />
                     </td>
-                    <td className="py-2 pr-3">{row.volume === null ? '--' : formatDecimal(row.volume)}</td>
-                    <td className="py-2 pr-3 text-left">
+                    <td className="py-3 pr-3"><FinancialValue value={row.volume} kind="quantity" instrumentId={row.instrumentId} unit={row.symbol.split('/')[0]} /></td>
+                    <td className="py-3 pr-3 text-left">
                       <Badge tone={row.quality === 'VALID' ? 'positive' : row.quality === null ? 'neutral' : 'negative'}>
                         {row.quality === null ? '等待行情' : (QUALITY_LABEL[row.quality] ?? row.quality)}
                       </Badge>
@@ -187,8 +195,7 @@ export function MarketsPage() {
             </table>
           )}
         </Panel>
-        <p className="mt-2 text-[11px] text-ink-muted">仅展示已接入行情 Feed 的市场；24H 涨跌由交易所最新价与 24H 开盘价派生，缺失显示 --。</p>
-      </div>
-    </div>
+        <p className="mt-3 text-[12px] text-ink-muted">24h 涨跌由交易所最新价与 24h 开盘价派生；缺失值显示 —，不会当作 0。</p>
+    </PageContainer>
   )
 }

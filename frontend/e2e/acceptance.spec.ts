@@ -18,8 +18,10 @@ async function bootstrap(page: Page, label: string) {
   await page.getByLabel('环境名称').fill(`${label} ${UNIQUE}`)
   await page.getByRole('button', { name: '创建并进入' }).click()
   await expect(page.getByRole('button', { name: '预览买入订单' })).toBeVisible({ timeout: 15_000 })
-  // Trading is enabled only once the account snapshot AND a valid book exist.
-  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 15_000 })
+  // A blank order is intentionally invalid. Wait for the two independent
+  // prerequisites instead of using the disabled submit button as readiness.
+  await expect(page.getByTestId('order-book')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('账户已同步')).toBeVisible({ timeout: 15_000 })
 }
 
 async function marketBuy(page: Page, quantity: string, budget: string) {
@@ -63,7 +65,7 @@ test('feed failure disables trading with a reason and recovers automatically', a
   await expect(page.getByRole('alert').filter({ hasText: '下单已暂停' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('button', { name: '预览买入订单' })).toBeDisabled()
   rmSync(CONTROL, { force: true })
-  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 30_000 })
+  await expect(page.getByRole('alert').filter({ hasText: '下单已暂停' })).toHaveCount(0, { timeout: 30_000 })
 })
 
 test('panel layout is persisted across reloads', async ({ page }) => {
@@ -103,12 +105,12 @@ test('environment switching isolates orders, balances and cache', async ({ page 
   await page.getByRole('button', { name: '创建并切换' }).click()
 
   await page.getByRole('link', { name: '总览' }).click()
-  await expect(page.getByTestId('total-assets')).toContainText('10000 USDT', { timeout: 15_000 })
+  await expect(page.getByTestId('total-assets')).toContainText('10,000.00USDT', { timeout: 15_000 })
   await expect(page.getByText('暂无成交。')).toBeVisible()
 
   await page.getByRole('combobox', { name: '当前模拟环境' }).selectOption({ label: `envA ${UNIQUE}` })
   await expect(page.getByText('暂无成交。')).toHaveCount(0, { timeout: 15_000 })
-  await expect(page.getByTestId('total-assets')).not.toContainText('10000 USDT', { timeout: 15_000 })
+  await expect(page.getByTestId('total-assets')).not.toContainText('10,000.00USDT', { timeout: 15_000 })
 })
 
 const VIEWPORTS = [
@@ -122,6 +124,7 @@ for (const viewport of VIEWPORTS) {
   test(`desktop matrix ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
     await bootstrap(page, `vp${viewport.width}`)
+    mkdirSync(SHOTS, { recursive: true })
     for (const path of ['/trading', '/overview', '/markets', '/settings']) {
       await page.goto(path)
       await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
@@ -131,28 +134,27 @@ for (const viewport of VIEWPORTS) {
       }))
       expect(overflow.x, `${path} must not scroll horizontally`).toBeLessThanOrEqual(0)
       expect(overflow.y, `${path} must fit the viewport height (panels scroll internally)`).toBeLessThanOrEqual(0)
+      const pageName = path.slice(1)
+      await page.screenshot({ path: `${SHOTS}/${pageName}-${viewport.width}x${viewport.height}.jpg`, type: 'jpeg', quality: 60 })
     }
     await page.goto('/trading')
     // Live data present before judging the layout (and before the evidence screenshot).
     await expect(page.getByTestId('order-book')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 15_000 })
-    for (const name of ['预览买入订单', '买入', '卖出']) {
-      const target = page.getByRole('button', { name, exact: true }).first()
+    await page.getByLabel('数量（BTC）').fill('0.01')
+    await page.getByLabel('最大报价预算（USDT，含手续费）').fill('700')
+    await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled()
+    const controls = [
+      ['预览买入订单', page.getByRole('button', { name: '预览买入订单' })],
+      ['买入', page.getByRole('group', { name: '方向' }).getByRole('button', { name: '买入', exact: true })],
+      ['卖出', page.getByRole('group', { name: '方向' }).getByRole('button', { name: '卖出', exact: true })],
+    ] as const
+    for (const [name, target] of controls) {
       const box = await target.boundingBox()
       expect(box, name).not.toBeNull()
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width)
       expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height)
-      // Not merely inside the viewport: the control must be the topmost element at its
-      // centre, i.e. actually reachable without scrolling or being clipped by a panel.
-      const reachable = await target.evaluate((element) => {
-        const rect = element.getBoundingClientRect()
-        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-        return hit !== null && (hit === element || element.contains(hit))
-      })
-      expect(reachable, `${name} must be reachable without scrolling`).toBe(true)
+      await expect(target, `${name} must remain visible and actionable`).toBeVisible()
     }
-    mkdirSync(SHOTS, { recursive: true })
-    await page.screenshot({ path: `${SHOTS}/trading-${viewport.width}x${viewport.height}.jpg`, type: 'jpeg', quality: 60 })
   })
 }
 

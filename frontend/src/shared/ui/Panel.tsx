@@ -19,7 +19,7 @@ export function Panel({
 }) {
   return (
     <section
-      className={cn('flex min-h-0 flex-col overflow-hidden rounded-[4px] border border-line bg-surface', className)}
+      className={cn('flex min-h-0 flex-col overflow-hidden rounded-[6px] border border-line bg-surface', className)}
     >
       <header className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
         <h2 className="text-sm font-medium text-ink">{title}</h2>
@@ -43,7 +43,11 @@ export function TermTip({ term, description }: { term: string; description: stri
 }
 
 export function EmptyState({ message }: { message: string }) {
-  return <p className="px-3 py-6 text-center text-xs text-ink-muted">{message}</p>
+  return (
+    <div className="flex min-h-28 items-center justify-center px-5 py-8 text-center">
+      <p className="max-w-md text-[13px] text-ink-muted">{message}</p>
+    </div>
+  )
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {

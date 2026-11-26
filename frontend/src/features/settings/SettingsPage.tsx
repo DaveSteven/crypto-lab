@@ -6,7 +6,7 @@ import { useSessionStore } from '@/app/sessionStore'
 import { connectionDisplay, useConnectionStore } from '@/app/connectionStore'
 import { useMarketStore } from '@/features/market/marketStore'
 import { REFERENCE_FEE_RATE, REFERENCE_FEE_SCHEDULE } from '@/features/trading/orderPreview'
-import { Badge, Button, EmptyState, Input, Label, Panel } from '@/shared/ui'
+import { Badge, Button, EmptyState, Input, Label, PageContainer, PageHeader, Panel } from '@/shared/ui'
 
 const rest = new RestClient()
 const NOT_PROVIDED = '后端暂未提供'
@@ -77,7 +77,7 @@ function EnvironmentSection() {
                 <li key={environment.environment_id} className="flex items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-ink">{environment.name}</div>
-                    <div className="numeric truncate text-[11px] text-ink-muted">{environment.environment_id}</div>
+                    <details className="mt-1 text-[12px] text-ink-muted"><summary className="cursor-pointer">技术详情</summary><div className="numeric mt-1 break-all">环境标识：{environment.environment_id}</div></details>
                   </div>
                   {current ? (
                     <Badge tone="brand">当前环境</Badge>
@@ -139,10 +139,11 @@ function AccountSection() {
     <Panel title="账户">
       <dl className="p-3">
         <Field label="当前账户" value={account?.name ?? '--'} />
-        <Field label="账户 ID" value={session?.accountId ?? '--'} />
-        <Field label="默认执行延迟" value={`${NOT_PROVIDED}（下单时单笔选择，默认 NORMAL）`} />
-        <Field label="手续费配置" value={`${NOT_PROVIDED}；本地估算参照 ${REFERENCE_FEE_SCHEDULE}（${REFERENCE_FEE_RATE}）`} />
+        <Field label="默认执行延迟" value="尚未实现账户级持久化；当前每笔订单默认使用标准（100 ms）" />
+        <Field label="手续费配置" value="实际费用由服务端撮合时决定" />
+        <Field label="本地预览参考" value={`${REFERENCE_FEE_RATE}（${REFERENCE_FEE_SCHEDULE}），仅用于下单前估算`} />
       </dl>
+      <details className="mx-3 mb-3 rounded-[6px] border border-line p-3 text-[12px] text-ink-muted"><summary className="cursor-pointer text-ink-secondary">账户技术详情</summary><div className="numeric mt-2 break-all">账户标识：{session?.accountId ?? '—'}</div></details>
       <p className="px-3 pb-3 text-[11px] text-ink-muted">已结算的流水与成交记录不可在此修改。</p>
     </Panel>
   )
@@ -210,7 +211,7 @@ function SystemSection() {
           label="行情品种"
           value={(instruments.data?.items ?? []).map((item) => `${item.base_asset}/${item.quote_asset}`).join('、') || '--'}
         />
-        <Field label="K 线周期" value="1m 常驻；5m/15m/1h/4h/1d 按页面需求动态订阅（ADR 0008）" />
+        <Field label="K 线周期" value="1m 常驻；其他周期按页面需求动态订阅" />
         <Field
           label="数据质量"
           value={
@@ -244,20 +245,35 @@ function SystemSection() {
   )
 }
 
+function TradingSection() {
+  return <Panel title="交易设置"><div className="space-y-3 p-4 text-[13px]"><div className="rounded-[6px] border border-line bg-canvas/40 p-4"><h3 className="font-medium text-ink">订单执行延迟</h3><p className="mt-1 text-ink-secondary">账户默认值的后端持久化尚未完成。当前下单面板默认选择“标准（100 ms）”，每笔订单可单独覆盖。</p></div><div className="rounded-[6px] border border-line bg-canvas/40 p-4"><h3 className="font-medium text-ink">手续费</h3><p className="mt-1 text-ink-secondary">实际 Maker/Taker 手续费由服务端配置和撮合结果决定。前端仅以 {REFERENCE_FEE_RATE} 作为预览参考，不会写入账户配置。</p></div></div></Panel>
+}
+
 /** Settings (docs/12 §17): only capabilities the backend actually offers. */
 export function SettingsPage() {
+  const [section, setSection] = useState<'environment' | 'account' | 'trading' | 'workspace' | 'system'>('environment')
+  const sections = [
+    ['environment', '模拟环境'],
+    ['account', '账户配置'],
+    ['trading', '交易设置'],
+    ['workspace', '工作区'],
+    ['system', '系统状态'],
+  ] as const
   return (
-    <div className="h-full overflow-auto p-3">
-      <div className="mx-auto grid max-w-[1100px] grid-cols-1 gap-3 xl:grid-cols-2">
-        <EnvironmentSection />
-        <div className="space-y-3">
-          <AccountSection />
-          <WorkspaceSection />
-        </div>
-        <div className="xl:col-span-2">
-          <SystemSection />
+    <PageContainer>
+      <PageHeader title="设置" description="管理模拟环境、交易偏好与本地工作区；系统诊断信息单独展示。" />
+      <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-6">
+        <nav aria-label="设置分类" className="self-start rounded-[6px] border border-line bg-surface p-2">
+          {sections.map(([value, label]) => <button key={value} type="button" onClick={() => setSection(value)} className={`mb-1 flex h-10 w-full items-center rounded-[6px] px-3 text-left text-[14px] ${section === value ? 'bg-elevated font-medium text-brand' : 'text-ink-secondary hover:bg-elevated/60 hover:text-ink'}`}>{label}</button>)}
+        </nav>
+        <div className="min-w-0">
+          {section === 'environment' && <EnvironmentSection />}
+          {section === 'account' && <AccountSection />}
+          {section === 'trading' && <TradingSection />}
+          {section === 'workspace' && <WorkspaceSection />}
+          {section === 'system' && <SystemSection />}
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }
