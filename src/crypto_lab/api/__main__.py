@@ -11,7 +11,8 @@ def main() -> None:
     # 8000 commonly collides with other local dev services; the default
     # development port is 8642 and stays bound to the loopback interface.
     port = int(os.getenv("CRYPTO_LAB_API_PORT", "8642"))
-    uvicorn.run(create_app(), host="127.0.0.1", port=port)
+    host = os.getenv("CRYPTO_LAB_API_HOST", "127.0.0.1")
+    uvicorn.run(create_app(), host=host, port=port, workers=1)
 
 
 if __name__ == "__main__":

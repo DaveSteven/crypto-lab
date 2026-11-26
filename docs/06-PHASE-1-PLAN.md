@@ -282,7 +282,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [ ] 执行 API 集成测试和浏览器 E2E 测试。
 - [ ] 验证刷新、重连、错误响应、过期行情及恢复场景。
 - [ ] 确认系统不调用真实交易接口。
-- [ ] 本地 Docker Compose 部署（ADR 0009，Accepted）：Frontend（React Build + Nginx，`127.0.0.1:8080`）/ Backend（单进程单 Worker）/ PostgreSQL 三容器；Nginx 代理 REST + WebSocket（升级与长连接）；Backend 监听地址可配置且不对宿主机暴露；Alembic Migration 先于业务服务且失败则不启动；Health/Readiness；优雅关闭 Feed、Scheduler、WebSocket；Named Volume + `pg_dump` 备份与恢复演练；Development / Local Production / Test 三库隔离及测试防护；`.env.example`；ARM64 Multi-stage 镜像；容器重启/重建数据保留与重启恢复规则验证。
+- [x] 本地 Docker Compose 部署（ADR 0009，Accepted / Implemented）：Frontend（React Build + Nginx，`127.0.0.1:8080`）/ Backend（单进程单 Worker）/ PostgreSQL 三容器；Nginx 代理 REST + WebSocket（升级与长连接）；Backend 监听地址可配置且不对宿主机暴露；Alembic Migration 先于业务服务且失败则不启动；Health/Readiness；优雅关闭 Feed、Scheduler、WebSocket；Named Volume + `pg_dump` 备份与恢复演练；Development / Local Production / Test 三库隔离及测试防护；`.env.example`；ARM64 Multi-stage 镜像；容器重启/重建数据保留与重启恢复规则验证。
 - [ ] 使用确定性行情样本分别测试 1、3、5、10、20 个活跃模拟环境。
 - [ ] 记录 CPU Usage、Memory Usage、Order Book Processing Time、Event Queue Backlog、Scheduler Lag、Database Transaction Time 和 Event Processing Throughput。
 - [ ] 对各环境规模比较模拟成交、余额、持仓、流动性消耗历史及事件顺序，确认相同输入产生一致业务结果。

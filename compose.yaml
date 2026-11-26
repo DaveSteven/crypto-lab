@@ -1,0 +1,70 @@
+name: crypto-lab
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${CRYPTO_LAB_DB_NAME:-crypto_lab_local}
+      POSTGRES_USER: ${CRYPTO_LAB_DB_USER:-crypto_lab}
+      POSTGRES_PASSWORD: ${CRYPTO_LAB_DB_PASSWORD:?set CRYPTO_LAB_DB_PASSWORD in .env}
+    volumes:
+      - crypto_lab_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      CRYPTO_LAB_DATABASE_URL: postgresql+psycopg://${CRYPTO_LAB_DB_USER:-crypto_lab}:${CRYPTO_LAB_DB_PASSWORD}@database:5432/${CRYPTO_LAB_DB_NAME:-crypto_lab_local}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      CRYPTO_LAB_DATABASE_URL: postgresql+psycopg://${CRYPTO_LAB_DB_USER:-crypto_lab}:${CRYPTO_LAB_DB_PASSWORD}@database:5432/${CRYPTO_LAB_DB_NAME:-crypto_lab_local}
+      CRYPTO_LAB_API_HOST: 0.0.0.0
+      CRYPTO_LAB_API_PORT: 8642
+      CRYPTO_LAB_FEED_ENABLED: ${CRYPTO_LAB_FEED_ENABLED:-true}
+      CRYPTO_LAB_FEED_INSTRUMENTS: ${CRYPTO_LAB_FEED_INSTRUMENTS:-BTC/USDT,ETH/USDT}
+      CRYPTO_LAB_FEED_CANDLE_INTERVALS: ${CRYPTO_LAB_FEED_CANDLE_INTERVALS:-1m}
+    command: ["python", "-m", "crypto_lab.api"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/health/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${CRYPTO_LAB_WEB_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  crypto_lab_postgres:

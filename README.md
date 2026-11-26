@@ -8,6 +8,7 @@ Crypto Lab 是一个基于真实虚拟货币市场数据、使用虚拟资金进
 
 - Python 3.12
 - Git
+- Docker Desktop / Docker Engine with Compose v2（本地容器化运行）
 
 本机可能安装了其他 Python 版本，请显式使用 `python3.12`。
 
@@ -29,7 +30,31 @@ export CRYPTO_LAB_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:543
 python -m crypto_lab.api
 ```
 
-服务固定绑定 `127.0.0.1:8642`（可用 `CRYPTO_LAB_API_PORT` 覆盖；避开常用 8000 端口冲突），OpenAPI 位于 `http://127.0.0.1:8642/docs`。Phase 1 尚无身份认证，不得将服务监听到公网。写接口必须提供 `Idempotency-Key`，所有余额和订单均为模拟数据。Task 1.10 只提供 REST，不包含 WebSocket 实时推送。
+服务默认绑定 `127.0.0.1:8642`（可用 `CRYPTO_LAB_API_HOST` / `CRYPTO_LAB_API_PORT` 覆盖），OpenAPI 位于 `http://127.0.0.1:8642/docs`。Phase 1 尚无身份认证，不得将服务监听到公网。写接口必须提供 `Idempotency-Key`，所有余额和订单均为模拟数据。
+
+## Docker Compose 本地运行
+
+复制示例配置并设置一个仅用于本机的数据库密码：
+
+```bash
+cp .env.example .env
+docker compose up --build --wait
+```
+
+完成后访问 `http://127.0.0.1:8080`。Compose 只将 Nginx 端口绑定到宿主机回环地址；Backend 和 PostgreSQL 仅在容器网络内可达。迁移任务成功后 Backend 才会启动。
+
+```bash
+docker compose down
+```
+
+`down` 不删除数据卷；除非明确要丢弃所有本地模拟数据，不要使用 `down -v`。备份和恢复使用项目外的绝对路径：
+
+```bash
+./scripts/backup_local_database.sh /absolute/path/crypto-lab-backup.sql
+./scripts/restore_local_database.sh /absolute/path/crypto-lab-backup.sql --confirm-replace-local-data
+```
+
+恢复会替换当前 Local Production 数据库，并在操作期间停止 Backend 和 Frontend。
 
 ## 本地初始化
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted（2026-11-26，项目负责人确认）。**仅记录设计**；实施、备份恢复演练与完整部署验收纳入 Task 1.13，不打断 Task 1.12。具体文件路径、镜像版本与启动命令以实际工程为准。
+Accepted / Implemented（2026-11-26）。项目负责人已确认设计，Task 1.13 已完成容器化实施与备份恢复演练。
 
 ## 背景
 
@@ -44,7 +44,7 @@ Phase 1 目前以开发方式运行（本机 Python 进程 + PostgreSQL 容器 +
 - Nginx 统一代理 REST 与 WebSocket；WebSocket 代理必须支持连接升级（`Upgrade/Connection`）与长连接（读写超时大于应用心跳间隔 15s / 客户端超时 45s，docs/10）。
 - PostgreSQL 与 Backend 仅在 Docker 内部网络；正式运行环境不向宿主机暴露其端口。
 - 无认证机制前禁止默认公网部署。
-- 注意：Backend 在容器内需监听容器网卡（当前代码固定 `127.0.0.1:8642`，Task 1.13 需改为可配置，且只对 Compose 内部网络可达）。
+- Backend 监听地址由 `CRYPTO_LAB_API_HOST` 配置；容器中使用 `0.0.0.0`，但不映射宿主机端口。
 
 ### 容器生命周期
 
@@ -75,7 +75,7 @@ Phase 1 目前以开发方式运行（本机 Python 进程 + PostgreSQL 容器 +
 
 ## 影响范围
 
-- 新增（Task 1.13）：Backend/Frontend Dockerfile、`docker-compose` 配置、Nginx 配置、`.env.example`、启停与备份恢复脚本、测试库防护、Backend 监听地址可配置、README 运行说明。
+- 已新增：Backend/Frontend Multi-stage Dockerfile、`compose.yaml`、Nginx 配置、`.env.example`、备份恢复脚本、Backend 监听地址配置及 README 运行说明。
 - 不影响：交易、撮合、持久化与 REST/WebSocket Contract。
 
 ## 验收（Task 1.13）
@@ -84,4 +84,4 @@ Phase 1 目前以开发方式运行（本机 Python 进程 + PostgreSQL 容器 +
 
 ## 当前状态
 
-设计已确认；尚未实施（Task 1.13）。
+已实施并在 macOS ARM64 完成验收：构建、一键启动、迁移门禁、REST/WebSocket 反向代理、回环端口约束、Backend 重启后数据保留，以及 `pg_dump` 备份恢复演练。完整 Phase 1 联调与性能基线仍属于 Task 1.13 后续子任务。
