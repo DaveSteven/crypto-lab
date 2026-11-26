@@ -113,6 +113,16 @@ class ApplicationService:
             )
             return 201, response
 
+    def list_environment_ids(self) -> list[str]:
+        """All persisted environment ids, oldest first (used to restore dispatch after restart)."""
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(schema.simulation_environments.c.environment_id).order_by(
+                    schema.simulation_environments.c.created_ts_ms
+                )
+            )
+            return [row[0] for row in rows]
+
     def get_environment(self, environment_id: str) -> dict[str, Any]:
         return self._one(
             select(schema.simulation_environments).where(

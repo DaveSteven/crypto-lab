@@ -234,7 +234,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] 订单状态中文映射（§13）；部分成交后取消/终止同时展示“已成交 x，取消剩余 y”，不隐藏已成交数量。
 - [x] 附带：`formatDecimal` 去除数据库 NUMERIC 刻度噪声（`0E-24`→`0`、尾随 0），仅用 Decimal，不改变数值。
 - 验证：vitest 93 项、tsc、build 通过；真实环境浏览器复查成交详情抽屉通过。未做：历史订单筛选/分页（§12.2，后端 Contract 支持度待确认）；Maker/Taker 等分析字段待后端提供。
-- 观察（未处理，需单独排查）：验证库中 1.12.8 验证时提交的一笔市价买单，在后端重启后仍长时间处于 PENDING_EXECUTION，疑似重启后待执行订单未被重新调度；尚未复现和定位。
+- 缺陷已修复（2026-11-26，后端）：`EnvironmentMarketDispatcher.register_environment` 此前只在创建环境时调用，进程重启后已存在的环境不再被调度，其 PENDING_EXECUTION 订单永不执行、也收不到行情撮合。根因经代码核对并在验证库复现（订单停在 PENDING 超过 10 分钟）。修复：lifespan 启动时通过 `service.list_environment_ids()` 调用 `register_existing_environments` 恢复全部持久化环境（幂等，单个环境失败不影响其他）。验证库复测：重启后该订单被处理，状态 REJECTED / `MARKET_DATA_UNAVAILABLE`——重启恢复时行情订单簿尚未就绪，且订单早已过期，按 Task 1.7/1.8 既定语义拒绝，不伪造成交。回归测试 2 项；全量 pytest 291 通过、19 跳过（缺 PostgreSQL 测试库 URL）。未做：重启后“待执行订单宽限等待订单簿就绪”的策略（属于业务规则，需负责人决定）。
 
 #### Gate D — Account Experience
 

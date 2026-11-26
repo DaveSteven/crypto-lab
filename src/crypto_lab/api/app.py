@@ -58,6 +58,23 @@ def _environment_exists(service: Any) -> Any:
     return exists
 
 
+def register_existing_environments(dispatcher: Any, service: Any) -> list[str]:
+    """Re-register persisted environments with the dispatcher after a restart.
+
+    Registration is otherwise only triggered by environment creation, so without
+    this a restarted process would never execute pending scheduled orders or
+    apply market data for environments created before the restart.
+    """
+    registered: list[str] = []
+    for environment_id in service.list_environment_ids():
+        try:
+            if dispatcher.register_environment(environment_id):
+                registered.append(environment_id)
+        except Exception:
+            _LOGGER.exception("failed to restore environment %s on startup", environment_id)
+    return registered
+
+
 def _dispatch_canonical(dispatcher: Any) -> Any:
     async def consume(event: Any) -> None:
         await asyncio.to_thread(dispatcher.apply_trade, event)
@@ -138,6 +155,10 @@ def create_app(
         if actual_market_feed is not None:
             feed_task = asyncio.create_task(actual_market_feed.run())
         if dispatcher is not None:
+            try:
+                await asyncio.to_thread(register_existing_environments, dispatcher, service)
+            except Exception:
+                _LOGGER.exception("failed to list environments for dispatcher restore")
             driver_task = asyncio.create_task(_dispatch_driver())
         yield
         if feed_task is not None:
