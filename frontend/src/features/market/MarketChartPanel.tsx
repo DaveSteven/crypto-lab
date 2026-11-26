@@ -126,7 +126,8 @@ export function MarketChartPanel() {
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-      timeScale: { timeVisible: true, borderColor: '#303943' },
+      // rightOffset keeps room right of the newest bar so marker labels are not clipped by the price scale.
+      timeScale: { timeVisible: true, borderColor: '#303943', rightOffset: 8 },
       rightPriceScale: { borderColor: '#303943' },
     })
     const series = chart.addSeries(CandlestickSeries, {
