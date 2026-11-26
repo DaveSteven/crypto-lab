@@ -265,7 +265,7 @@ export function MarketChartPanel() {
         })()}
         <div><span className="block text-[11px] text-ink-muted">24h 最高</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.high_24h} kind="price" instrumentId={instrument} /></div>
         <div><span className="block text-[11px] text-ink-muted">24h 最低</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.low_24h} kind="price" instrumentId={instrument} /></div>
-        <div><span className="block text-[11px] text-ink-muted">24h 成交量 ({base})</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.base_volume_24h} kind="quantity" instrumentId={instrument} /></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 成交量 ({base})</span><FinancialValue className="text-[13px] text-ink-secondary" value={ticker?.ticker.base_volume_24h} kind="volume" /></div>
         <div className="ml-auto text-right">
           <Badge tone={qualityOk ? 'positive' : 'negative'} title={quality?.reason}>{QUALITY_LABEL[quality?.status ?? 'VALID'] ?? quality?.status}</Badge>
           <span className="mt-1 block text-[11px] text-ink-muted">OKX 公共行情 · {formatTime(ticker?.eventTsMs)}</span>

@@ -5,7 +5,7 @@ import { buildBookView, calculateVisibleDepth, type BookRow } from './orderBook'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
 import { EmptyState, Tabs } from '@/shared/ui'
 import { cn } from '@/shared/lib/utils'
-import { formatTime } from '@/shared/lib/format'
+import { formatPercentage, formatPrice, formatQuantity, formatTime } from '@/shared/lib/format'
 
 const TABS = [
   { value: 'book', label: '订单簿' },
@@ -17,10 +17,14 @@ function Row({
   row,
   side,
   disabled,
+  fullPrecision,
+  instrumentId,
 }: {
   row: BookRow
   side: 'ask' | 'bid'
   disabled: boolean
+  fullPrecision: boolean
+  instrumentId: string
 }) {
   const pickPrice = useOrderDraftStore((state) => state.pickPrice)
   const tone = side === 'ask' ? 'text-negative bg-negative/10' : 'text-positive bg-positive/10'
@@ -37,9 +41,9 @@ function Row({
         className={cn('absolute inset-y-0 right-0', tone.split(' ')[1])}
         style={{ width: `${Math.round(row.depthRatio * 100)}%` }}
       />
-      <span className={cn('numeric relative', tone.split(' ')[0])}>{row.price}</span>
-      <span className="numeric relative text-right text-ink-secondary">{row.quantity}</span>
-      <span className="numeric relative text-right text-ink-muted">{row.cumulative}</span>
+      <span className={cn('numeric relative', tone.split(' ')[0])} title={`完整精度：${row.price}`}>{fullPrecision ? row.price : formatPrice(row.price, instrumentId)}</span>
+      <span className="numeric relative text-right text-ink-secondary" title={`完整精度：${row.quantity}`}>{fullPrecision ? row.quantity : formatQuantity(row.quantity)}</span>
+      <span className="numeric relative text-right text-ink-muted" title={`完整精度：${row.cumulative}`}>{fullPrecision ? row.cumulative : formatQuantity(row.cumulative)}</span>
     </button>
   )
 }
@@ -51,6 +55,7 @@ const OrderBookView = memo(function OrderBookView() {
   const hasBook = book !== undefined
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [visibleDepth, setVisibleDepth] = useState(8)
+  const [fullPrecision, setFullPrecision] = useState(false)
   const qualityOk = (quality?.status ?? 'VALID') === 'VALID'
   const view = useMemo(
     () => (book ? buildBookView(book.bids, book.asks, visibleDepth) : null),
@@ -79,24 +84,24 @@ const OrderBookView = memo(function OrderBookView() {
       <div className="grid shrink-0 grid-cols-3 gap-2 px-3 py-1.5 text-[11px] text-ink-muted">
         <span>价格 ({quote})</span>
         <span className="text-right">数量 ({base})</span>
-        <span className="text-right">累计 ({base})</span>
+        <button type="button" className="text-right hover:text-brand" onClick={() => setFullPrecision((value) => !value)} aria-pressed={fullPrecision} title="切换订单簿数字精度">{fullPrecision ? '完整精度' : `累计 (${base})`}</button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
         {/* Asks are drawn highest→lowest so the best ask sits next to the spread. */}
         {[...view.asks].reverse().map((row) => (
-          <Row key={`a-${row.price}`} row={row} side="ask" disabled={!qualityOk} />
+          <Row key={`a-${row.price}`} row={row} side="ask" disabled={!qualityOk} fullPrecision={fullPrecision} instrumentId={INSTRUMENT} />
         ))}
       </div>
       <div className="shrink-0 border-y border-line bg-canvas/40 px-3 py-2">
         <div className="numeric flex items-center justify-between text-[12px]">
-          <span className="text-negative">卖一 {view.bestAsk ?? '--'}</span>
-          <strong className="text-ink">价差 {view.spread ?? '--'}{view.spreadRate !== null && ` · ${view.spreadRate}%`}</strong>
-          <span className="text-positive">买一 {view.bestBid ?? '--'}</span>
+          <span className="text-negative">卖一 {formatPrice(view.bestAsk, INSTRUMENT)}</span>
+          <strong className="text-ink">价差 {formatPrice(view.spread, INSTRUMENT)}{view.spreadRate !== null && ` · ${formatPercentage(view.spreadRate, true)}%`}</strong>
+          <span className="text-positive">买一 {formatPrice(view.bestBid, INSTRUMENT)}</span>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {view.bids.map((row) => (
-          <Row key={`b-${row.price}`} row={row} side="bid" disabled={!qualityOk} />
+          <Row key={`b-${row.price}`} row={row} side="bid" disabled={!qualityOk} fullPrecision={fullPrecision} instrumentId={INSTRUMENT} />
         ))}
       </div>
       <p className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-ink-muted">
@@ -124,9 +129,9 @@ const MarketTradesView = memo(function MarketTradesView() {
             className={cn('numeric text-right', trade.side === 'BUY' ? 'text-positive' : 'text-negative')}
             title={trade.side === 'BUY' ? '主动买入' : '主动卖出'}
           >
-            {trade.price}
+            {formatPrice(trade.price, INSTRUMENT)}
           </span>
-          <span className="numeric text-right text-ink-secondary">{trade.quantity}</span>
+          <span className="numeric text-right text-ink-secondary" title={`完整精度：${trade.quantity}`}>{formatQuantity(trade.quantity, INSTRUMENT)}</span>
         </div>
       ))}
       <p className="px-3 py-1 text-[10px] text-ink-muted">

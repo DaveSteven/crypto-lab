@@ -112,7 +112,7 @@ export function MarketsPage() {
           <div key={row.instrumentId} className="rounded-[6px] border border-line bg-surface p-5">
             <div className="flex items-start justify-between"><div><h2 className="text-[18px] font-semibold text-ink">{row.symbol}</h2><p className="mt-1 text-[12px] text-ink-muted">{row.exchange} · 现货</p></div><Badge tone={row.quality === 'VALID' ? 'positive' : 'negative'}>{row.quality === 'VALID' ? '行情有效' : '等待有效行情'}</Badge></div>
             <div className="mt-4 flex items-end justify-between"><FinancialValue className="text-[26px] font-semibold text-ink" value={row.last} kind="price" instrumentId={row.instrumentId} unit="USDT" /><div className={cn('text-[16px] font-medium', row.change === null ? 'text-ink-muted' : row.change.startsWith('-') ? 'text-negative' : 'text-positive')}>{row.change === null ? '—' : <FinancialValue value={row.change} kind="percent" unit="%" />}</div></div>
-            <div className="mt-3 flex items-center justify-between text-[12px] text-ink-muted"><span>24h 成交量 <FinancialValue value={row.volume} kind="quantity" instrumentId={row.instrumentId} unit={row.symbol.split('/')[0]} /></span><Button size="compact" variant="outline" onClick={() => open(row)}>前往交易</Button></div>
+            <div className="mt-3 flex items-center justify-between text-[12px] text-ink-muted"><span>24h 成交量 <FinancialValue value={row.volume} kind="volume" unit={row.symbol.split('/')[0]} /></span><Button size="compact" variant="outline" onClick={() => open(row)}>前往交易</Button></div>
           </div>
         ))}
       </div>

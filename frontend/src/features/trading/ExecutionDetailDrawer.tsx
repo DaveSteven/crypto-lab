@@ -1,4 +1,4 @@
-import { formatDecimal, formatTime } from '@/shared/lib/format'
+import { formatFee, formatLatency, formatPrice, formatQuantity, formatTime, instrumentLabel } from '@/shared/lib/format'
 import { Drawer, TermTip } from '@/shared/ui'
 import { useDetailStore } from './detailStore'
 import { useTradingStore } from './tradingStore'
@@ -43,10 +43,10 @@ export function ExecutionDetailDrawer() {
           <Section title="基本信息">
             <Row label="订单 ID" value={order.order_id} />
             {executionId !== null && <Row label="成交 ID" value={executionId} />}
-            <Row label="交易所 / 品种" value={order.instrument_id} />
+            <Row label="交易所 / 品种" value={`OKX / ${instrumentLabel(order.instrument_id)}`} />
             <Row label="方向 / 类型" value={`${order.side === 'BUY' ? '买入' : '卖出'} · ${order.order_type === 'MARKET' ? '市价' : '限价'} ${order.time_in_force}`} />
-            <Row label="数量" value={formatDecimal(order.quantity)} />
-            <Row label="已成交 / 剩余" value={`${formatDecimal(order.filled_quantity)} / ${remainingQuantity(order)}`} />
+            <Row label="数量" value={formatQuantity(order.quantity, order.instrument_id)} />
+            <Row label="已成交 / 剩余" value={`${formatQuantity(order.filled_quantity, order.instrument_id)} / ${formatQuantity(remainingQuantity(order), order.instrument_id)}`} />
             <Row label="状态" value={statusLabel(order.status)} />
             {fillSummary(order) !== null && <Row label="说明" value={fillSummary(order) ?? ''} />}
             {order.termination_reason && <Row label="终止原因" value={order.termination_reason} />}
@@ -54,13 +54,13 @@ export function ExecutionDetailDrawer() {
           </Section>
 
           <Section title="成交分析">
-            <Row label="提交参考价" value={formatDecimal(order.reference_price)} />
-            <Row label="成交均价" value={formatDecimal(order.average_fill_price)} />
-            <Row label="累计成交额" value={formatDecimal(order.cumulative_quote_amount)} />
+            <Row label="提交参考价" value={formatPrice(order.reference_price, order.instrument_id)} />
+            <Row label="成交均价" value={formatPrice(order.average_fill_price, order.instrument_id)} />
+            <Row label="累计成交额" value={formatFee(order.cumulative_quote_amount)} />
             <Row
               label="手续费（累计）"
               tip="交易所按成交额收取的费用，与滑点分开显示；滑点已包含在成交价格里，不重复计算。"
-              value={`${formatDecimal(order.cumulative_fee)}（费率 ${formatDecimal(order.reserved_fee_rate)}，${order.fee_schedule_id ?? '--'}）`}
+              value={`${formatFee(order.cumulative_fee)}（费率 ${formatQuantity(order.reserved_fee_rate)}，${order.fee_schedule_id ?? '--'}）`}
             />
             <Row label="Maker / Taker" value={MISSING} />
             <Row
@@ -76,11 +76,11 @@ export function ExecutionDetailDrawer() {
           </Section>
 
           <Section title="延迟分析">
-            <Row label="配置延迟" value={`${order.configured_latency_ms ?? '--'} ms`} />
+            <Row label="配置延迟" value={formatLatency(order.configured_latency_ms)} />
             <Row label="计划执行时间" value={formatTime(order.scheduled_execution_ts_ms)} />
             <Row label="实际执行时间" value={formatTime(order.executed_ts_ms)} />
-            <Row label="调度滞后" value={`${order.scheduler_lag_ms ?? '--'} ms`} />
-            <Row label="实际模拟延迟" value={`${order.actual_simulated_delay_ms ?? '--'} ms`} />
+            <Row label="调度滞后" value={formatLatency(order.scheduler_lag_ms)} />
+            <Row label="实际模拟延迟" value={formatLatency(order.actual_simulated_delay_ms)} />
             <p className="mt-1 text-[11px] text-ink-muted">
               实际模拟延迟是模拟撮合的等待时间，不等于真实交易所的网络延迟。
             </p>
@@ -96,13 +96,13 @@ export function ExecutionDetailDrawer() {
                 <div className="numeric flex justify-between">
                   <span>{formatTime(fill.executed_ts_ms)}</span>
                   <span>
-                    {formatDecimal(fill.quantity)} @ {formatDecimal(fill.price)}
+                    {formatQuantity(fill.quantity, order.instrument_id)} @ {formatPrice(fill.price, order.instrument_id)}
                   </span>
                 </div>
                 <div className="numeric flex justify-between text-ink-muted">
                   <span className="break-all">{fill.execution_id}</span>
                   <span>
-                    {formatDecimal(fill.fee_amount)} {fill.fee_asset}
+                    {formatFee(fill.fee_amount)} {fill.fee_asset}
                   </span>
                 </div>
               </div>

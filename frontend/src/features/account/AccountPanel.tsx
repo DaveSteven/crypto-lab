@@ -1,6 +1,6 @@
-import { formatDecimal } from '@/shared/lib/format'
+import { instrumentLabel } from '@/shared/lib/format'
 import { useTradingStore } from '@/features/trading/tradingStore'
-import { EmptyState, TermTip } from '@/shared/ui'
+import { EmptyState, FinancialValue, TermTip } from '@/shared/ui'
 
 /** Balances / Positions views (docs/12 §12.4/§12.5). */
 export function AccountPanel({ view }: { view: 'balances' | 'positions' }) {
@@ -23,8 +23,8 @@ export function AccountPanel({ view }: { view: 'balances' | 'positions' }) {
           {balances.map((balance) => (
             <tr key={balance.asset} className="border-b border-line/50 hover:bg-elevated/40">
               <td className="py-1.5 pl-2 pr-2 text-left">{balance.asset}</td>
-              <td className="py-1.5 pr-2">{formatDecimal(balance.available)}</td>
-              <td className="py-1.5 pr-2">{formatDecimal(balance.locked)}</td>
+              <td className="py-1.5 pr-2"><FinancialValue value={balance.available} unit={balance.asset} /></td>
+              <td className="py-1.5 pr-2"><FinancialValue value={balance.locked} unit={balance.asset} /></td>
             </tr>
           ))}
         </tbody>
@@ -53,12 +53,12 @@ export function AccountPanel({ view }: { view: 'balances' | 'positions' }) {
       <tbody className="numeric">
         {positions.map((position) => (
           <tr key={position.instrument_id} className="border-b border-line/50 hover:bg-elevated/40">
-            <td className="py-1.5 pl-2 pr-2 text-left">{position.instrument_id}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(position.quantity)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(position.average_cost)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(position.cost_basis)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(position.realized_pnl)}</td>
-            <td className="py-1.5 pr-2">{formatDecimal(position.cumulative_fees)}</td>
+            <td className="py-1.5 pl-2 pr-2 text-left">{instrumentLabel(position.instrument_id)}</td>
+            <td className="py-1.5 pr-2"><FinancialValue value={position.quantity} kind="quantity" instrumentId={position.instrument_id} /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={position.average_cost} kind="price" instrumentId={position.instrument_id} /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={position.cost_basis} /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={position.realized_pnl} kind="pnl" /></td>
+            <td className="py-1.5 pr-2"><FinancialValue value={position.cumulative_fees} kind="fee" /></td>
           </tr>
         ))}
       </tbody>

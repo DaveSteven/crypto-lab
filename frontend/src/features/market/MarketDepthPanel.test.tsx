@@ -92,6 +92,21 @@ describe('MarketDepthPanel', () => {
     expect(useOrderDraftStore.getState().pickedPrice).toBe('100.1')
   })
 
+  test('switches order-book numbers between compact and full precision', async () => {
+    event('market.order_book', {
+      bids: [{ price: '100.00000000', quantity: '0.123456789' }],
+      asks: [{ price: '100.10000000', quantity: '0.00000001' }],
+      sequence_id: 'precision',
+      received_ts_ms: 1,
+    })
+    const user = userEvent.setup()
+    render(<MarketDepthPanel />)
+    expect(screen.getAllByText('0.123457')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: /累计 \(BTC\)/ }))
+    expect(screen.getAllByText('0.123456789')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '完整精度' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   test('non-VALID quality disables price picking and warns', async () => {
     book()
     event('market.quality', { quality_status: 'UNSYNCED', reason: 'gap' })

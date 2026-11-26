@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ApiError } from '@/shared/api/rest'
 import { rest } from '@/shared/api/client'
-import { formatDecimal, formatTime } from '@/shared/lib/format'
+import { formatFee, formatLatency, formatPrice, formatQuantity, formatTime } from '@/shared/lib/format'
 import { gateway } from '@/app/gateway'
 import { useSessionStore } from '@/app/sessionStore'
 import { useTradingStore } from './tradingStore'
@@ -103,7 +103,7 @@ export function OrdersTable({
                 </span>
               </td>
               <td className="py-1.5 pr-2 text-left">{order.order_type === 'MARKET' ? '市价' : '限价'}</td>
-              <td className="py-1.5 pr-2">{formatDecimal(order.limit_price)}</td>
+              <td className="py-1.5 pr-2" title={order.limit_price ?? undefined}>{formatPrice(order.limit_price, order.instrument_id)}</td>
               <td className="py-1.5 pr-2 text-left">
                 <div>{statusLabel(order.status)}</div>
                 {fillSummary(order) !== null && (
@@ -111,17 +111,17 @@ export function OrdersTable({
                 )}
               </td>
               <td className="py-1.5 pr-2">
-                {formatDecimal(order.quantity)} / {formatDecimal(order.filled_quantity)}
+                {formatQuantity(order.quantity, order.instrument_id)} / {formatQuantity(order.filled_quantity, order.instrument_id)}
               </td>
               <td className="py-1.5 pr-2">{remainingQuantity(order)}</td>
-              <td className="py-1.5 pr-2">{formatDecimal(order.average_fill_price)}</td>
-              <td className="py-1.5 pr-2">{formatDecimal(order.cumulative_fee)}</td>
-              <td className="py-1.5 pr-2">{order.configured_latency_ms ?? '—'} ms</td>
+              <td className="py-1.5 pr-2">{formatPrice(order.average_fill_price, order.instrument_id)}</td>
+              <td className="py-1.5 pr-2">{formatFee(order.cumulative_fee)}</td>
+              <td className="py-1.5 pr-2">{formatLatency(order.configured_latency_ms)}</td>
               <td className="py-1.5 pr-2" title="实际执行 − 提交时间">
-                {order.actual_simulated_delay_ms ?? '—'} ms
+                {formatLatency(order.actual_simulated_delay_ms)}
               </td>
               <td className="py-1.5 pr-2" title="实际执行 − 计划执行（模拟调度粒度）">
-                {order.scheduler_lag_ms ?? '—'} ms
+                {formatLatency(order.scheduler_lag_ms)}
               </td>
               <td className="flex gap-1 py-1.5 pr-2 text-left">
                 <Button variant="ghost" size="compact" onClick={() => openDetail(order.order_id)}>

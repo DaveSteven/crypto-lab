@@ -66,6 +66,43 @@ export const INSTRUMENT_DISPLAY_RULES: Record<string, { price: number; quantity:
   'okx:SPOT:ETH/USDT': { price: 2, quantity: 6 },
 }
 
+export function formatPrice(value: string | null | undefined, instrumentId?: string): string {
+  const precision = instrumentId === undefined ? 8 : (INSTRUMENT_DISPLAY_RULES[instrumentId]?.price ?? 8)
+  return formatFinancial(value, { minimumFractionDigits: instrumentId ? precision : 0, maximumFractionDigits: precision, preserveSmallNonZero: true })
+}
+
+export function formatAmount(value: string | null | undefined): string {
+  return formatFinancial(value, { minimumFractionDigits: 2, maximumFractionDigits: 2, preserveSmallNonZero: true })
+}
+
+export function formatQuantity(value: string | null | undefined, instrumentId?: string, full = false): string {
+  const precision = full ? 16 : (instrumentId === undefined ? 6 : (INSTRUMENT_DISPLAY_RULES[instrumentId]?.quantity ?? 6))
+  return formatFinancial(value, { maximumFractionDigits: precision, preserveSmallNonZero: true })
+}
+
+export function formatPnL(value: string | null | undefined): string {
+  const formatted = formatAmount(value)
+  if (value == null || formatted === '—') return formatted
+  try { return new Decimal(value).gt(0) ? `+${formatted}` : formatted } catch { return formatted }
+}
+
+export function formatPercentage(value: string | null | undefined, adaptive = false): string {
+  return formatFinancial(value, { minimumFractionDigits: 2, maximumFractionDigits: adaptive ? 6 : 2, preserveSmallNonZero: true })
+}
+
+export function formatVolume(value: string | null | undefined): string {
+  return formatFinancial(value, { minimumFractionDigits: 2, maximumFractionDigits: 2, preserveSmallNonZero: true })
+}
+
+export function formatFee(value: string | null | undefined): string {
+  return formatFinancial(value, { minimumFractionDigits: 2, maximumFractionDigits: 8, preserveSmallNonZero: true })
+}
+
+export function formatLatency(value: number | string | null | undefined): string {
+  if (value == null) return '—'
+  try { return `${new Decimal(value).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0)} ms` } catch { return `${value} ms` }
+}
+
 export function instrumentLabel(instrumentId: string): string {
   return instrumentId.split(':').at(-1) ?? instrumentId
 }

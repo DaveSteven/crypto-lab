@@ -61,8 +61,8 @@ export function OverviewPage() {
     </div>
     <div className="mt-4 grid grid-cols-4 gap-4">
       <Metric label="冻结资金" tip="挂单或待执行订单占用的资金。" value={<FinancialValue value={valuation.locked} unit="USDT" />} />
-      <Metric testId="realized-pnl" label="累计已实现盈亏" tip="由完整成交历史按移动平均成本法重建；不同币种不相加。" value={realizedEntries === null ? '—' : realizedEntries.length === 0 ? <FinancialValue value="0" unit="USDT" /> : realizedEntries.map(([currency, amount], index) => <span key={currency} className={signClass(amount)}>{index > 0 && <span className="mx-1 text-ink-muted">·</span>}<FinancialValue value={amount} unit={currency} /></span>)} tone={realizedEntries?.length === 1 ? signClass(realizedEntries[0][1]) : undefined} />
-      <Metric label="未实现盈亏" tip="有效买一价估算的持仓市值减去成本。" value={valuation.unrealizedPnl === null ? '—' : <FinancialValue value={valuation.unrealizedPnl} unit="USDT" />} tone={signClass(valuation.unrealizedPnl)} />
+      <Metric testId="realized-pnl" label="累计已实现盈亏" tip="由完整成交历史按移动平均成本法重建；不同币种不相加。" value={realizedEntries === null ? '—' : realizedEntries.length === 0 ? <FinancialValue value="0" unit="USDT" kind="pnl" /> : realizedEntries.map(([currency, amount], index) => <span key={currency} className={signClass(amount)}>{index > 0 && <span className="mx-1 text-ink-muted">·</span>}<FinancialValue value={amount} unit={currency} kind="pnl" /></span>)} tone={realizedEntries?.length === 1 ? signClass(realizedEntries[0][1]) : undefined} />
+      <Metric label="未实现盈亏" tip="有效买一价估算的持仓市值减去成本。" value={valuation.unrealizedPnl === null ? '—' : <FinancialValue value={valuation.unrealizedPnl} unit="USDT" kind="pnl" />} tone={signClass(valuation.unrealizedPnl)} />
       <Metric label="累计手续费" value={valuation.feesByAsset.length === 0 ? <FinancialValue value="0" unit="USDT" kind="fee" /> : valuation.feesByAsset.map((fee) => <FinancialValue key={fee.asset} value={fee.amount} unit={fee.asset} kind="fee" />)} />
     </div>
 
