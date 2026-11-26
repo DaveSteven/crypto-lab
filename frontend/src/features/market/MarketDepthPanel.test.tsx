@@ -46,6 +46,7 @@ describe('MarketDepthPanel', () => {
   test('renders levels, spread and picks a price without submitting', async () => {
     book()
     render(<MarketDepthPanel />)
+    expect(screen.getByText('累计 (BTC)')).toBeVisible()
     expect(screen.getByText(/价差 0.1/)).toBeVisible()
     await userEvent.setup().click(screen.getByText('100.1'))
     expect(useOrderDraftStore.getState().pickedPrice).toBe('100.1')

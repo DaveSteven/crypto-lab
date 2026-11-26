@@ -19,8 +19,8 @@
 
   /* Text */
   --text-primary: #e8edf2;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-secondary: #a9b7c8;
+  --text-muted: #7f8fa3;
 
   /* Brand (never used for P&L semantics) */
   --brand-primary: #2dd4bf;
@@ -82,13 +82,28 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Financial figures always render with tabular numerals (docs/12 §4.4). */
 .numeric {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
   text-align: right;
+}
+
+.workspace-resize-handle {
+  position: relative;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.workspace-resize-handle:hover,
+.workspace-resize-handle:focus-visible,
+.workspace-resize-handle[data-resize-handle-state="drag"] {
+  background: color-mix(in srgb, var(--brand-primary) 28%, transparent);
+  outline: none;
 }
 
 /*

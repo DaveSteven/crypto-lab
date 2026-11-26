@@ -274,6 +274,10 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] 完整 E2E（确认流程、成交与余额变化、行情失效禁用与恢复、布局持久化、环境切换隔离）：13 项，连续 4 轮全部通过；使用 SYNTHETIC 脚本化行情的测试专用后端 `tests/support/e2e_server.py`（拒绝非 test 库）。
 - [x] Desktop Acceptance Matrix（1280×720 / 1440×900 / 1920×1080 / 2560×1440，含按钮可点击命中测试与截图）、可访问性自动检查、性能检查（Long Task 0、堆增长 < 1.2 MB）。**未做**：Safari/Firefox/Edge、颜色对比度、读屏、真实高频行情下的前端性能。
 - [x] Task 1.12 验收报告：docs/13-FRONTEND-ACCEPTANCE-REPORT.md；项目负责人于 2026-11-26 确认 Gate E 通过。订单簿事件随环境数线性放大已确认为 Phase 1 Known Limitation / Technical Debt，不阻塞 Task 1.12；按 Task 1.13 独立性能基线复测。
+- [x] **UI/UX Refinement（2026-11-26）**：保持 Dark Theme、Teal 品牌色及三栏 Desktop Workspace；提高正文、金融数字与辅助文字可读性，统一 tabular numbers，降低静态分隔线对比度并保留 Teal 交互反馈；浏览器 Title/Favicon 更新为 Crypto Lab。
+- [x] 行情头强化交易对、最新价、24h 数据、成交量单位、来源/质量及交易对切换入口；订单簿按面板高度显示真实深度并增加累计数量、Best Bid/Ask 与 Spread；下单支持 BTC 数量/USDT 金额两种输入，以 Decimal 做参考换算，明确含手续费预算、参考价/金额/手续费，延迟使用中文名称与毫秒数，提交动作改为订单预览且继续强制确认。
+- [x] 图表时间轴明确使用浏览器本地时区（当前验收为 Asia/Tokyo）；REST 历史与 WS Candle 继续按相同 canonical key 合并，未闭合 Candle 原位更新，Ticker 与 Candle 保持各自真实数据及独立更新节奏；实现回到最新、图表全屏、个人成交标记及 autoSize 重绘。指标与绘图工具留作独立 Chart Analysis 任务。
+- [x] Account Activity 支持折叠/恢复并持久化，当前委托显示真实数量；四种桌面分辨率 Chromium E2E、可访问性、性能与完整前端回归通过，证据更新至 docs/13 及 `docs/screenshots/acceptance/`。未改变撮合、手续费、延迟、预算或任何核心金融规则。
 
 
 ### Task 1.13 — 前后端联调与 Phase 1 验收

@@ -89,3 +89,14 @@
 ## 9. 结论
 
 除 §8 所列外，docs/12 §20/§21/§22/§23 的可自动化验收项均已通过。多环境订单簿性能限制已有明确决策，不阻塞 Task 1.12。项目负责人已确认验收通过，§8 未验证项及性能基线继续纳入 Task 1.13。
+
+## 10. UI/UX Refinement 补充验收（2026-11-26）
+
+本次为 Task 1.12.12 的独立后续优化，不修改既有 Accepted / Completed 结论，也不改变核心交易规则。
+
+- **全局与布局**：保留 Dark Theme、Teal 品牌色和桌面三栏；正文/金融数字/辅助文字提高可读性和对比度，数字使用 tabular numbers；分隔线默认弱化，交互时使用 Teal；Title 与 Favicon 更新为 Crypto Lab。
+- **行情与图表**：最新价提升至 26px，24h 指标、成交量单位、来源和质量状态分组显示；时间轴显式采用浏览器本地时区，验收环境显示 Asia/Tokyo；新增交易对切换入口、回到最新和图表全屏。REST 历史 Candle 与 WS Candle 继续共用 canonical instrument/interval key，未闭合 Candle 按 open time 更新；Ticker 与 Candle 不互相覆盖，因此短暂价格差异可由真实数据更新时间不同产生。个人成交标记和图表 autoSize 保留并复核。指标及绘图工具未纳入本轮。
+- **订单簿与下单**：订单簿按可用高度调整真实档位，增加累计数量及强化 Best Bid/Ask/Spread；未补造档位。市价买入可按 BTC 数量或 USDT 金额输入，参考换算使用 Decimal；最大报价预算仍显式覆盖手续费，不自动追加资金；参考价、参考金额、参考手续费缺失时显示 `--`，不伪造数据。延迟显示中文名称和实际毫秒数，提交按钮改为订单预览并保留强制确认 Dialog。
+- **账户活动**：底部面板可折叠、恢复并持久化；当前委托 Tab 显示真实开放订单数；不新增未经后端确认的收益数据。
+- **验证**：Vitest **131 passed（26 files）**；Oxlint 0 error（保留 1 条既有 chart effect warning）；TypeScript/Vite build 通过，主包 748.39 kB（gzip 235.05 kB，既有单 chunk 警告）；Playwright Chromium **13 passed**，覆盖 1280×720、1440×900、1920×1080、2560×1440，无页面溢出且关键交易控件可命中；Account Activity 折叠状态经刷新保持；20 秒合成实时行情下 Long Task 0、堆增长 0.81 MB。Docker Compose 重新构建并通过三服务健康检查。
+- **截图**：`docs/screenshots/acceptance/trading-{1280x720,1440x900,1920x1080,2560x1440}.jpg`。截图来自真实 Chromium 页面和完整前后端链路，但行情为确定性的 SYNTHETIC 测试数据，仅作为布局与交互证据；不将其描述为真实 OKX 市场快照。

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useMarketStore } from './marketStore'
 import { useInstrument } from './instrumentStore'
 import { buildBookView, type BookRow } from './orderBook'
@@ -30,7 +30,7 @@ function Row({
       disabled={disabled}
       onClick={() => pickPrice(row.price)}
       title={disabled ? '行情不可用，无法取价' : '点击填入限价（不会自动下单）'}
-      className="relative grid w-full grid-cols-2 px-3 py-[2px] text-left text-xs hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-60"
+      className="relative grid w-full grid-cols-3 gap-2 px-3 py-[3px] text-left text-[12px] hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span
         aria-hidden
@@ -39,6 +39,7 @@ function Row({
       />
       <span className={cn('numeric relative', tone.split(' ')[0])}>{row.price}</span>
       <span className="numeric relative text-right text-ink-secondary">{row.quantity}</span>
+      <span className="numeric relative text-right text-ink-muted">{row.cumulative}</span>
     </button>
   )
 }
@@ -47,24 +48,37 @@ const OrderBookView = memo(function OrderBookView() {
   const { instrumentId: INSTRUMENT, base, quote } = useInstrument()
   const book = useMarketStore((state) => state.orderBooks[INSTRUMENT])
   const quality = useMarketStore((state) => state.quality[INSTRUMENT])
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [visibleDepth, setVisibleDepth] = useState(8)
   const qualityOk = (quality?.status ?? 'VALID') === 'VALID'
   const view = useMemo(
-    () => (book ? buildBookView(book.bids, book.asks) : null),
-    [book],
+    () => (book ? buildBookView(book.bids, book.asks, visibleDepth) : null),
+    [book, visibleDepth],
   )
+  useEffect(() => {
+    const node = containerRef.current
+    if (node === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      const rowsPerSide = Math.max(3, Math.floor((entry.contentRect.height - 96) / 44))
+      setVisibleDepth(rowsPerSide)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
   if (view === null || (view.asks.length === 0 && view.bids.length === 0)) {
     return <EmptyState message="暂无订单簿数据，等待行情。" />
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="order-book">
+    <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="order-book">
       {!qualityOk && (
         <p role="status" className="shrink-0 bg-warning/10 px-3 py-1 text-[11px] text-warning">
           订单簿{quality?.status === 'UNSYNCED' ? '未同步' : '不可用'}：{quality?.reason ?? ''}
         </p>
       )}
-      <div className="grid shrink-0 grid-cols-2 px-3 py-1 text-[11px] text-ink-muted">
+      <div className="grid shrink-0 grid-cols-3 gap-2 px-3 py-1.5 text-[11px] text-ink-muted">
         <span>价格 ({quote})</span>
         <span className="text-right">数量 ({base})</span>
+        <span className="text-right">累计 ({base})</span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
         {/* Asks are drawn highest→lowest so the best ask sits next to the spread. */}
@@ -72,17 +86,19 @@ const OrderBookView = memo(function OrderBookView() {
           <Row key={`a-${row.price}`} row={row} side="ask" disabled={!qualityOk} />
         ))}
       </div>
-      <div className="numeric shrink-0 border-y border-line px-3 py-1 text-xs text-ink-secondary">
-        价差 {view.spread ?? '--'}
-        {view.spreadRate !== null && ` (${view.spreadRate}%)`} · 卖一 {view.bestAsk ?? '--'} / 买一{' '}
-        {view.bestBid ?? '--'}
+      <div className="shrink-0 border-y border-line bg-canvas/40 px-3 py-2">
+        <div className="numeric flex items-center justify-between text-[12px]">
+          <span className="text-negative">卖一 {view.bestAsk ?? '--'}</span>
+          <strong className="text-ink">价差 {view.spread ?? '--'}{view.spreadRate !== null && ` · ${view.spreadRate}%`}</strong>
+          <span className="text-positive">买一 {view.bestBid ?? '--'}</span>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {view.bids.map((row) => (
           <Row key={`b-${row.price}`} row={row} side="bid" disabled={!qualityOk} />
         ))}
       </div>
-      <p className="shrink-0 border-t border-line px-3 py-1 text-[10px] text-ink-muted">
+      <p className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-ink-muted">
         真实市场深度，不代表模拟单一定能按此数量成交。
       </p>
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { allocate, buildOrderPreview } from './orderPreview'
+import { allocate, buildOrderPreview, latencyDisplay } from './orderPreview'
 import type { OrderFormValues } from './orderForm'
 
 const base: OrderFormValues = {
@@ -67,5 +67,12 @@ describe('allocate', () => {
     ).toBe('4.99500499')
     expect(allocate(50, { side: 'BUY', order_type: 'LIMIT' }, available, quote)).toBeNull()
     expect(allocate(50, { side: 'SELL', order_type: 'MARKET' }, { base: '0', quote: '0' }, quote)).toBeNull()
+  })
+})
+
+describe('latencyDisplay', () => {
+  test('uses user-facing Chinese names and always includes milliseconds', () => {
+    expect(latencyDisplay('NORMAL')).toBe('标准（100 ms）')
+    expect(latencyDisplay('CUSTOM', 321)).toBe('自定义（321 ms）')
   })
 })

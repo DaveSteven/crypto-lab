@@ -31,7 +31,7 @@ describe('OrderEntryPanel', () => {
     const user = userEvent.setup()
     render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
     expect(screen.getByRole('alert')).toHaveTextContent('最大报价预算')
   })
 
@@ -70,7 +70,7 @@ describe('OrderEntryPanel', () => {
     render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('订单已提交')
@@ -98,7 +98,7 @@ describe('OrderEntryPanel', () => {
     render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent('MARKET_DATA_UNAVAILABLE')
@@ -120,7 +120,7 @@ describe('OrderEntryPanel', () => {
     })
     render(<OrderEntryPanel />)
     expect(screen.getByRole('alert')).toHaveTextContent('下单已暂停')
-    expect(screen.getByRole('button', { name: /提交/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '预览买入订单' })).toBeDisabled()
   })
 
   test('a picked order-book price switches to a LIMIT draft and does not submit', async () => {
@@ -142,7 +142,7 @@ describe('OrderEntryPanel', () => {
     render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
     const dialog = screen.getByRole('dialog', { name: '确认下单' })
     expect(dialog).toHaveTextContent('本地参考估算')
     expect(dialog).toHaveTextContent('行情缺失')
@@ -157,7 +157,7 @@ describe('OrderEntryPanel', () => {
     render(<OrderEntryPanel />)
     await user.type(screen.getByLabelText('数量（BTC）'), '1')
     await user.type(screen.getByLabelText('最大报价预算（USDT，含手续费）'), '105')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -187,7 +187,7 @@ describe('OrderEntryPanel', () => {
     await user.click(screen.getByRole('button', { name: '卖出' }))
     expect(screen.getByTestId('available-balance')).toHaveTextContent('3 ETH')
     await user.type(screen.getByLabelText('数量（ETH）'), '1')
-    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    await user.click(screen.getByRole('button', { name: '预览卖出订单' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('ETH/USDT')
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     await waitFor(() => expect(body.instrument_id).toBe('okx:SPOT:ETH/USDT'))
@@ -198,6 +198,26 @@ describe('OrderEntryPanel', () => {
     useTradingStore.getState().reset() // synced: false
     render(<OrderEntryPanel />)
     expect(screen.getByRole('alert')).toHaveTextContent('账户状态同步中')
-    expect(screen.getByRole('button', { name: /提交$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '预览买入订单' })).toBeDisabled()
+  })
+
+  test('quote amount mode derives a Decimal quantity and keeps the budget explicit', async () => {
+    const user = userEvent.setup()
+    useMarketStore.getState().applyMarketEvent({
+      protocol_version: '1.0.0',
+      type: 'market.ticker',
+      environment_id: 'env-1',
+      stream_id: 's',
+      stream_sequence: 1,
+      event_id: 'ticker-1',
+      event_ts_ms: 1_000,
+      published_ts_ms: 1_000,
+      payload: { bid: '99', ask: '100', last: '100' },
+      instrument_id: 'okx:SPOT:BTC/USDT',
+    })
+    render(<OrderEntryPanel />)
+    await user.click(screen.getByRole('button', { name: '按 USDT 金额' }))
+    await user.type(screen.getByRole('textbox', { name: /最大资金预算/ }), '100.1')
+    expect(screen.getByText(/按参考 Ask 换算数量/)).toHaveTextContent('1 BTC')
   })
 })

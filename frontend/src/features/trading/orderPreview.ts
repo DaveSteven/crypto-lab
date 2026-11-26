@@ -20,6 +20,22 @@ export const PRESET_LATENCY_MS: Record<string, number> = {
   HIGH: 1_000,
 }
 
+export const LATENCY_LABELS: Record<string, string> = {
+  IDEAL: '理想',
+  FAST: '快速',
+  NORMAL: '标准',
+  MEDIUM: '中等',
+  SLOW: '慢速',
+  HIGH: '高延迟',
+  CUSTOM: '自定义',
+}
+
+export function latencyDisplay(preset: string, customMs?: number): string {
+  const milliseconds = preset === 'CUSTOM' ? customMs : PRESET_LATENCY_MS[preset]
+  const label = LATENCY_LABELS[preset] ?? preset
+  return milliseconds === undefined ? label : `${label}（${milliseconds} ms）`
+}
+
 export interface QuoteContext {
   bid?: string | null
   ask?: string | null

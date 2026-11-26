@@ -80,7 +80,7 @@ describe('MarketChartPanel', () => {
     render(<MarketChartPanel />)
     expect(await screen.findByText('BTC/USDT')).toBeVisible()
     expect(screen.getByTestId('candle-chart')).toBeVisible()
-    expect(screen.getByText(/来源：OKX 公共行情/)).toBeVisible()
+    expect(screen.getByText(/OKX 公共行情/)).toBeVisible()
     await waitFor(() => expect(candleHistory).toHaveBeenCalledWith(INSTRUMENT, '1m', { limit: 200 }))
     expect(useMarketStore.getState().candles[`${INSTRUMENT}|1m`]).toHaveLength(3)
   })

@@ -11,7 +11,7 @@ async function bootstrapSession(page: Page) {
   await page.goto('/trading')
   await page.getByLabel('环境名称').fill(`E2E ${UNIQUE}`)
   await page.getByRole('button', { name: '创建并进入' }).click()
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeVisible({
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeVisible({
     timeout: 15_000,
   })
 }
@@ -30,13 +30,13 @@ test('bootstrap, place limit intent, inspect activity tabs, balances', async ({
   await page.getByRole('group', { name: '订单类型' }).getByRole('button', { name: '限价' }).click()
   await page.getByLabel('数量（BTC）').fill('0.01')
   await page.getByLabel('限价（USDT）').fill('50000')
-  await page.getByRole('button', { name: '买入提交' }).click()
+  await page.getByRole('button', { name: '预览买入订单' }).click()
   // Every order goes through the confirmation dialog (docs/12 §11.5).
   await page.getByRole('dialog', { name: '确认下单' }).getByRole('button', { name: '确认提交' }).click()
   await expect(page.getByRole('status').filter({ hasText: '订单已提交' })).toBeVisible()
 
   // Account Activity Panel: 当前委托 shows the committed order.
-  await page.getByRole('tab', { name: '当前委托' }).click()
+  await page.getByRole('tab', { name: /当前委托/ }).click()
   await expect(page.getByRole('columnheader', { name: '限价' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '50000', exact: true })).toBeVisible()
 
@@ -60,7 +60,7 @@ test('bootstrap, place limit intent, inspect activity tabs, balances', async ({
 test('session persists across reload', async ({ page }) => {
   await bootstrapSession(page)
   await page.reload()
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeVisible({
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeVisible({
     timeout: 15_000,
   })
   await expect(page.getByText('Paper Trading')).toBeVisible()

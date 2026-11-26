@@ -17,16 +17,16 @@ async function bootstrap(page: Page, label: string) {
   await page.goto('/trading')
   await page.getByLabel('环境名称').fill(`${label} ${UNIQUE}`)
   await page.getByRole('button', { name: '创建并进入' }).click()
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeVisible({ timeout: 15_000 })
   // Trading is enabled only once the account snapshot AND a valid book exist.
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeEnabled({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 15_000 })
 }
 
 async function marketBuy(page: Page, quantity: string, budget: string) {
   await page.getByLabel('数量（BTC）').fill(quantity)
   await page.getByLabel('最大报价预算（USDT，含手续费）').fill(budget)
   await page.getByRole('combobox', { name: /模拟执行延迟/ }).selectOption('IDEAL')
-  await page.getByRole('button', { name: '买入提交' }).click()
+  await page.getByRole('button', { name: '预览买入订单' }).click()
   const dialog = page.getByRole('dialog', { name: '确认下单' })
   await expect(dialog).toContainText('本地参考估算')
   await dialog.getByRole('button', { name: '确认提交' }).click()
@@ -61,9 +61,9 @@ test('feed failure disables trading with a reason and recovers automatically', a
   await bootstrap(page, 'stale')
   writeFileSync(CONTROL, 'drop')
   await expect(page.getByRole('alert').filter({ hasText: '下单已暂停' })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeDisabled()
   rmSync(CONTROL, { force: true })
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeEnabled({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 30_000 })
 })
 
 test('panel layout is persisted across reloads', async ({ page }) => {
@@ -81,8 +81,15 @@ test('panel layout is persisted across reloads', async ({ page }) => {
   const before = await read()
   expect(Object.keys(before).length).toBeGreaterThan(0)
   await page.reload()
-  await expect(page.getByRole('button', { name: '买入提交' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: '预览买入订单' })).toBeVisible({ timeout: 15_000 })
   expect(await read()).toEqual(before)
+
+  await page.getByRole('button', { name: '收起面板' }).click()
+  await expect(page.getByRole('button', { name: /展开账户活动/ })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /展开账户活动/ })).toBeVisible()
+  await page.getByRole('button', { name: /展开账户活动/ }).click()
+  await expect(page.getByRole('button', { name: '收起面板' })).toBeVisible()
 })
 
 test('environment switching isolates orders, balances and cache', async ({ page }) => {
@@ -128,8 +135,8 @@ for (const viewport of VIEWPORTS) {
     await page.goto('/trading')
     // Live data present before judging the layout (and before the evidence screenshot).
     await expect(page.getByTestId('order-book')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('button', { name: '买入提交' })).toBeEnabled({ timeout: 15_000 })
-    for (const name of ['买入提交', '买入', '卖出']) {
+    await expect(page.getByRole('button', { name: '预览买入订单' })).toBeEnabled({ timeout: 15_000 })
+    for (const name of ['预览买入订单', '买入', '卖出']) {
       const target = page.getByRole('button', { name, exact: true }).first()
       const box = await target.boundingBox()
       expect(box, name).not.toBeNull()
@@ -196,7 +203,7 @@ test('accessibility: names, landmarks, dialog focus management, keyboard reachab
   await page.goto('/trading')
   await page.getByLabel('数量（BTC）').fill('0.01')
   await page.getByLabel('最大报价预算（USDT，含手续费）').fill('700')
-  const submit = page.getByRole('button', { name: '买入提交' })
+  const submit = page.getByRole('button', { name: '预览买入订单' })
   await expect(submit).toBeEnabled({ timeout: 15_000 }) // snapshot + valid book after the reload
   await submit.focus()
   await page.keyboard.press('Enter')
@@ -215,7 +222,7 @@ test('accessibility: names, landmarks, dialog focus management, keyboard reachab
     await page.keyboard.press('Tab')
     reached.add(await page.evaluate(() => document.activeElement?.textContent?.trim().slice(0, 20) ?? ''))
   }
-  expect([...reached].join('|')).toContain('买入提交')
+  expect([...reached].join('|')).toContain('预览买入订单')
 })
 
 test('performance: no long main-thread stalls, bounded heap and DOM during live feed', async ({ page }, testInfo) => {

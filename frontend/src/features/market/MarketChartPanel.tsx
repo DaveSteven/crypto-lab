@@ -46,6 +46,18 @@ function formatTime(tsMs: number | null | undefined): string {
   return new Date(tsMs).toLocaleTimeString('zh-CN', { hour12: false })
 }
 
+function chartTimeLabel(time: Time): string {
+  if (typeof time === 'string') return time
+  if (typeof time !== 'number') return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`
+  return new Date(time * 1_000).toLocaleString('zh-CN', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 /** Market Header strip + candlestick chart (docs/12 §8/§9). */
 export function MarketChartPanel() {
   const { instrumentId: instrument, exchange, marketType, base, quote } = useInstrument()
@@ -58,6 +70,7 @@ export function MarketChartPanel() {
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const [legend, setLegend] = useState<CandleBar | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const executions = useTradingStore((state) => state.executions)
 
   const key = candleKey(instrument, interval)
@@ -129,8 +142,9 @@ export function MarketChartPanel() {
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+      localization: { timeFormatter: chartTimeLabel },
       // rightOffset keeps room right of the newest bar so marker labels are not clipped by the price scale.
-      timeScale: { timeVisible: true, borderColor: '#303943', rightOffset: 8 },
+      timeScale: { timeVisible: true, borderColor: '#303943', rightOffset: 8, tickMarkFormatter: chartTimeLabel },
       rightPriceScale: { borderColor: '#303943' },
     })
     const series = chart.addSeries(CandlestickSeries, {
@@ -228,40 +242,34 @@ export function MarketChartPanel() {
   const marketUnavailable = !qualityOk || display === 'offline'
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[4px] border border-line bg-surface">
+    <div className={fullscreen ? 'fixed inset-2 z-40 flex min-h-0 flex-col overflow-hidden rounded-[6px] border border-brand/50 bg-surface shadow-2xl' : 'flex h-full min-h-0 flex-col overflow-hidden rounded-[4px] border border-line bg-surface'}>
       {/* Market Header (docs/12 §8) — fields without backend support show —. */}
-      <div className="flex h-16 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-3">
-        <div>
-          <span className="text-base font-semibold text-ink">{base}/{quote}</span>
-          <span className="ml-2 text-xs text-ink-muted">{exchange.toUpperCase()} · {marketType}</span>
+      <div className="flex min-h-[76px] shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-line px-4 py-2">
+        <div className="min-w-[126px]">
+          <a href="/markets" className="block text-left hover:text-brand" title="切换交易对">
+            <span className="block text-[17px] font-semibold text-ink">{base}/{quote}</span>
+            <span className="mt-0.5 block text-[11px] text-ink-muted">{exchange.toUpperCase()} · {marketType} · 切换</span>
+          </a>
         </div>
-        <span className="numeric text-2xl font-semibold text-ink">
-          {ticker?.ticker.last ?? '—'}
-        </span>
-        <span className="numeric text-xs text-ink-secondary">
-          Bid {ticker?.ticker.bid ?? '—'} / Ask {ticker?.ticker.ask ?? '—'}
-        </span>
+        <div className="min-w-[150px]">
+          <span className="numeric block text-[26px] font-semibold leading-none text-ink">{ticker?.ticker.last ?? '—'}</span>
+          <span className="numeric mt-1.5 block text-[11px] text-ink-secondary">Bid {ticker?.ticker.bid ?? '—'} · Ask {ticker?.ticker.ask ?? '—'}</span>
+        </div>
         {(() => {
           const change = change24h(ticker?.ticker.last, ticker?.ticker.open_24h)
-          if (change === null) return <span className="numeric text-xs text-ink-muted">24H 涨跌 --</span>
+          if (change === null) return <div className="min-w-[90px]"><span className="block text-[11px] text-ink-muted">24h 涨跌</span><span className="numeric text-[14px] text-ink-muted">--</span></div>
           const up = !change.percent.startsWith('-')
           return (
-            <span className={`numeric text-xs ${up ? 'text-positive' : 'text-negative'}`}>
-              24H {up ? '+' : ''}
-              {change.percent}%
-            </span>
+            <div className="min-w-[90px]"><span className="block text-[11px] text-ink-muted">24h 涨跌</span><span className={`numeric text-[14px] font-medium ${up ? 'text-positive' : 'text-negative'}`}>{up ? '+' : ''}{change.percent}%</span></div>
           )
         })()}
-        <span className="numeric text-xs text-ink-muted">
-          24H 高 {ticker?.ticker.high_24h ?? '--'} · 24H 低 {ticker?.ticker.low_24h ?? '--'} · 24H
-          量 {ticker?.ticker.base_volume_24h ?? '--'}
-        </span>
-        <Badge tone={qualityOk ? 'positive' : 'negative'} title={quality?.reason}>
-          {QUALITY_LABEL[quality?.status ?? 'VALID'] ?? quality?.status}
-        </Badge>
-        <span className="ml-auto text-[11px] text-ink-muted">
-          来源：OKX 公共行情 · 行情时间 {formatTime(ticker?.eventTsMs)}
-        </span>
+        <div><span className="block text-[11px] text-ink-muted">24h 最高</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.high_24h ?? '--'}</span></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 最低</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.low_24h ?? '--'}</span></div>
+        <div><span className="block text-[11px] text-ink-muted">24h 成交量 ({base})</span><span className="numeric text-[13px] text-ink-secondary">{ticker?.ticker.base_volume_24h ?? '--'}</span></div>
+        <div className="ml-auto text-right">
+          <Badge tone={qualityOk ? 'positive' : 'negative'} title={quality?.reason}>{QUALITY_LABEL[quality?.status ?? 'VALID'] ?? quality?.status}</Badge>
+          <span className="mt-1 block text-[11px] text-ink-muted">OKX 公共行情 · {formatTime(ticker?.eventTsMs)}</span>
+        </div>
       </div>
 
       {!qualityOk && (
@@ -296,6 +304,13 @@ export function MarketChartPanel() {
         >
           {loading ? '加载中…' : '加载更早'}
         </Button>
+        <Button variant="outline" size="compact" onClick={() => chartRef.current?.timeScale().scrollToRealTime()}>
+          回到最新
+        </Button>
+        <Button variant="outline" size="compact" onClick={() => setFullscreen((value) => !value)}>
+          {fullscreen ? '退出全屏' : '图表全屏'}
+        </Button>
+        <span className="ml-2 text-[11px] text-ink-muted">时间轴：{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
       </div>
 
       <div className="relative min-h-0 w-full flex-1">

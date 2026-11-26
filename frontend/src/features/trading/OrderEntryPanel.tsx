@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import Decimal from 'decimal.js'
 import { useOrderDraftStore } from './orderDraftStore'
 import { ApiError } from '@/shared/api/rest'
 import { rest } from '@/shared/api/client'
@@ -19,6 +20,8 @@ import {
   REFERENCE_FEE_SCHEDULE,
   allocate,
   buildOrderPreview,
+  latencyDisplay,
+  QUANTITY_DECIMALS,
 } from './orderPreview'
 import { formatDecimal } from '@/shared/lib/format'
 import { Button, Dialog, Input, Label, Select, TermTip } from '@/shared/ui'
@@ -48,6 +51,7 @@ export function OrderEntryPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [pending, setPending] = useState<OrderFormValues | null>(null)
+  const [inputUnit, setInputUnit] = useState<'base' | 'quote'>('base')
   const balances = useTradingStore((state) => state.balances)
   const ticker = useMarketStore((state) => state.tickers[INSTRUMENT])
   const quote = { bid: ticker?.ticker.bid, ask: ticker?.ticker.ask }
@@ -59,6 +63,7 @@ export function OrderEntryPanel() {
   const connected = display !== 'offline'
   const accountSynced = useTradingStore((state) => state.synced)
   const tradable = marketOk && connected && accountSynced
+  const preview = buildOrderPreview(values, quote)
 
   // A price picked from the order book switches the draft to LIMIT. Subscribing
   // only reacts to picks made after mount (stale picks are ignored).
@@ -84,6 +89,18 @@ export function OrderEntryPanel() {
     }
     setErrors([])
     update({ quantity: result.quantity, ...(result.max_quote_budget ? { max_quote_budget: result.max_quote_budget } : {}) })
+  }
+
+  function updateQuoteBudget(value: string) {
+    const budget = value || undefined
+    const ask = quote.ask
+    if (budget === undefined || ask == null || !/^\d+(\.\d+)?$/.test(budget)) {
+      update({ max_quote_budget: budget, quantity: '' })
+      return
+    }
+    const spendable = new Decimal(budget).div(new Decimal(1).plus(REFERENCE_FEE_RATE))
+    const quantity = spendable.div(ask).toDecimalPlaces(QUANTITY_DECIMALS, Decimal.ROUND_DOWN)
+    update({ max_quote_budget: budget, quantity: quantity.gt(0) ? quantity.toFixed() : '' })
   }
 
   /** Step 1 of docs/12 §11.5: client validation, then the confirmation dialog. */
@@ -196,16 +213,51 @@ export function OrderEntryPanel() {
           </span>
         </p>
 
-        <Label>
-          数量（{baseAsset}）
-          <Input
-            className="mt-1 numeric"
-            value={values.quantity}
-            onChange={(event) => update({ quantity: event.target.value })}
-            inputMode="decimal"
-            required
-          />
-        </Label>
+        {values.side === 'BUY' && values.order_type === 'MARKET' && (
+          <div className="grid grid-cols-2 gap-1 rounded-[6px] bg-canvas/50 p-1" role="group" aria-label="买入输入单位">
+            <button
+              type="button"
+              onClick={() => setInputUnit('base')}
+              className={inputUnit === 'base' ? 'h-7 rounded-[5px] bg-elevated text-[12px] font-medium text-ink' : 'h-7 rounded-[5px] text-[12px] text-ink-secondary hover:bg-elevated/60'}
+            >
+              按 {baseAsset} 数量
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputUnit('quote')}
+              className={inputUnit === 'quote' ? 'h-7 rounded-[5px] bg-elevated text-[12px] font-medium text-ink' : 'h-7 rounded-[5px] text-[12px] text-ink-secondary hover:bg-elevated/60'}
+            >
+              按 {quoteAsset} 金额
+            </button>
+          </div>
+        )}
+
+        {inputUnit === 'base' || values.side !== 'BUY' || values.order_type !== 'MARKET' ? (
+          <Label>
+            数量（{baseAsset}）
+            <Input
+              className="mt-1 numeric"
+              value={values.quantity}
+              onChange={(event) => update({ quantity: event.target.value })}
+              inputMode="decimal"
+              required
+            />
+          </Label>
+        ) : (
+          <Label>
+            最大资金预算（{quoteAsset}，含参考手续费）
+            <Input
+              className="mt-1 numeric"
+              value={values.max_quote_budget ?? ''}
+              onChange={(event) => updateQuoteBudget(event.target.value)}
+              inputMode="decimal"
+              required
+            />
+            <span className="mt-1 block text-[11px] text-ink-muted">
+              按参考 Ask 换算数量：<span className="numeric text-ink-secondary">{values.quantity || '—'} {baseAsset}</span>
+            </span>
+          </Label>
+        )}
 
         <p className="flex flex-wrap gap-x-3 text-[11px] text-ink-muted">
           术语：<TermTip term="限价" description="你愿意成交的价格上限（买）或下限（卖）。限价单可能一直挂着不成交，直到价格到达或你取消。" /> <TermTip term="最大报价预算" description="市价买单最多愿意花费的 USDT，含手续费。预算内部分成交，未成交部分取消，冻结资金释放，不会自动追加资金。" /> <TermTip term="模拟执行延迟" description="从下单到模拟撮合之间的等待时间，用来模拟真实网络与交易所处理耗时；延迟期间行情可能变化。" />
@@ -237,7 +289,7 @@ export function OrderEntryPanel() {
           </Label>
         )}
 
-        {values.order_type === 'MARKET' && values.side === 'BUY' && (
+        {values.order_type === 'MARKET' && values.side === 'BUY' && inputUnit === 'base' && (
           <Label>
             最大报价预算（{quoteAsset}，含手续费）
             <Input
@@ -260,7 +312,7 @@ export function OrderEntryPanel() {
           >
             {LATENCY_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {latencyDisplay(option)}
               </option>
             ))}
           </Select>
@@ -296,6 +348,12 @@ export function OrderEntryPanel() {
           </p>
         )}
 
+        <div className="rounded-[6px] border border-line bg-canvas/40 p-2 text-[11px]">
+          <div className="flex justify-between text-ink-secondary"><span>{preview.referenceLabel || '参考价'}</span><span className="numeric">{formatDecimal(preview.referencePrice)} {quoteAsset}</span></div>
+          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考交易金额</span><span className="numeric">{formatDecimal(preview.estimatedNotional)} {quoteAsset}</span></div>
+          <div className="mt-1 flex justify-between text-ink-secondary"><span>参考手续费 <TermTip term="说明" description={`仅使用 ${REFERENCE_FEE_SCHEDULE} 的 ${REFERENCE_FEE_RATE} 做本地参考；真实模拟费用由服务端根据 Maker/Taker 决定。`} /></span><span className="numeric">{formatDecimal(preview.estimatedFee)} {quoteAsset}</span></div>
+        </div>
+
         </div>
 
         {/* Submit stays pinned: always reachable at the 1280x720 minimum viewport. */}
@@ -306,7 +364,7 @@ export function OrderEntryPanel() {
           type="submit"
           disabled={submitting || !tradable || session === null}
         >
-          {submitting ? '提交中…' : values.side === 'BUY' ? '买入提交' : '卖出提交'}
+          {submitting ? '提交中…' : values.side === 'BUY' ? '预览买入订单' : '预览卖出订单'}
         </Button>
         <p className="text-[11px] leading-relaxed text-ink-muted">
           前端只提交订单意图；成交价格、手续费与结果由服务端模拟撮合决定。每次提交使用新的幂等键。
@@ -381,7 +439,7 @@ function ConfirmBody({
         <Line label="预估手续费" value={preview.estimatedFee === null ? '--' : `${preview.estimatedFee} ${quoteAsset}`} />
         <Line
           label="模拟执行延迟"
-          value={preview.latencyMs === null ? values.latency_preset : `${values.latency_preset}（${preview.latencyMs} ms）`}
+          value={latencyDisplay(values.latency_preset, values.custom_latency_ms)}
         />
       </dl>
       {preview.exceedsBudget && (
