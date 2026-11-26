@@ -20,6 +20,7 @@ from crypto_lab.trading.execution import ExecutionRecord, ExecutionSimulator
 from crypto_lab.trading.fees import FeeSchedule
 from crypto_lab.trading.models import FrozenModel
 from crypto_lab.trading.orders import OrderSide, OrderStatus, OrderType, PaperOrder
+from crypto_lab.trading.unit_of_work import InMemoryUnitOfWork
 
 
 class TradeProcessingStatus(StrEnum):
@@ -59,6 +60,7 @@ class TradeThroughEngine:
         simulator: ExecutionSimulator,
         fee_schedule: FeeSchedule,
         max_trade_age_ms: int,
+        unit_of_work: InMemoryUnitOfWork | None = None,
     ) -> None:
         if not simulation_environment_id:
             raise ValueError("simulation environment ID is required")
@@ -72,12 +74,25 @@ class TradeThroughEngine:
         self.simulator = simulator
         self.fee_schedule = fee_schedule
         self.max_trade_age_ms = max_trade_age_ms
+        self.unit_of_work = unit_of_work
         self._processed_event_ids: set[str] = set()
         self._processed_trade_keys: set[str] = set()
         self._progress: dict[str, _TradeProgress] = {}
         self._last_ordering_key: tuple[int, int, str] | None = None
 
     def process_trade(
+        self,
+        event: MarketEventEnvelope[Trade],
+        *,
+        observed_ts_ms: int,
+    ) -> TradeProcessingResult:
+        if self.unit_of_work is None:
+            return self._process_trade(event, observed_ts_ms=observed_ts_ms)
+        return self.unit_of_work.run(
+            lambda: self._process_trade(event, observed_ts_ms=observed_ts_ms)
+        )
+
+    def _process_trade(
         self,
         event: MarketEventEnvelope[Trade],
         *,
@@ -165,6 +180,48 @@ class TradeThroughEngine:
             allocations=tuple(allocations),
             remaining=remaining,
         )
+
+    def snapshot_state(
+        self,
+    ) -> tuple[
+        set[str],
+        set[str],
+        dict[str, _TradeProgress],
+        tuple[int, int, str] | None,
+    ]:
+        return (
+            self._processed_event_ids.copy(),
+            self._processed_trade_keys.copy(),
+            {
+                key: _TradeProgress(
+                    remaining_quantity=value.remaining_quantity,
+                    allocated_order_ids=value.allocated_order_ids.copy(),
+                )
+                for key, value in self._progress.items()
+            },
+            self._last_ordering_key,
+        )
+
+    def restore_state(
+        self,
+        state: tuple[
+            set[str],
+            set[str],
+            dict[str, _TradeProgress],
+            tuple[int, int, str] | None,
+        ],
+    ) -> None:
+        processed_event_ids, processed_trade_keys, progress, last_ordering_key = state
+        self._processed_event_ids = processed_event_ids.copy()
+        self._processed_trade_keys = processed_trade_keys.copy()
+        self._progress = {
+            key: _TradeProgress(
+                remaining_quantity=value.remaining_quantity,
+                allocated_order_ids=value.allocated_order_ids.copy(),
+            )
+            for key, value in progress.items()
+        }
+        self._last_ordering_key = last_ordering_key
 
     def _eligible_orders(self, event: MarketEventEnvelope[Trade]) -> list[PaperOrder]:
         orders = [order for order in self.simulator.orders.orders() if self._eligible(order, event)]

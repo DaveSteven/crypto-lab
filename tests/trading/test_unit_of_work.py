@@ -162,3 +162,61 @@ def test_failure_injection_at_each_commit_stage_restores_state(failure_stage: st
 
     assert (ledger.entries, ledger.balances(), orders.orders(), portfolio.positions()) == before
     assert simulator.executions() == ()
+
+
+def test_incremental_portfolio_equals_rebuild_from_complete_fill_history() -> None:
+    _, _, orders, portfolio, simulator, uow = setup_transaction()
+    first_buy = orders.place(
+        instrument_id="okx:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("1"),
+        limit_price=Decimal("100"),
+        estimated_buy_fee_rate=Decimal("0.01"),
+    )
+    uow.run(
+        lambda: simulator.execute(
+            first_buy.order_id,
+            price=Decimal("100"),
+            quantity=Decimal("1"),
+            fee_rate=Decimal("0.01"),
+        )
+    )
+    second_buy = orders.place(
+        instrument_id="okx:SPOT:BTC/USDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("1"),
+        limit_price=Decimal("120"),
+        estimated_buy_fee_rate=Decimal("0.01"),
+    )
+    uow.run(
+        lambda: simulator.execute(
+            second_buy.order_id,
+            price=Decimal("120"),
+            quantity=Decimal("1"),
+            fee_rate=Decimal("0.01"),
+        )
+    )
+    sell = orders.place(
+        instrument_id="okx:SPOT:BTC/USDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.5"),
+        limit_price=Decimal("130"),
+    )
+    uow.run(
+        lambda: simulator.execute(
+            sell.order_id,
+            price=Decimal("130"),
+            quantity=Decimal("0.5"),
+            fee_rate=Decimal("0.01"),
+        )
+    )
+
+    rebuilt = PortfolioEngine(simulator.executions())
+
+    assert portfolio.positions() == rebuilt.positions()
+    position = portfolio.position(first_buy.account_id, first_buy.instrument_id)
+    assert position.quantity == Decimal("1.5")
+    assert position.realized_pnl == Decimal("8.80")

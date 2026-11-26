@@ -14,12 +14,14 @@ from crypto_lab.models import (
 from crypto_lab.trading import (
     ExecutionSimulator,
     FeeSchedule,
+    InMemoryUnitOfWork,
     InsufficientBalanceError,
     LiquidityRole,
     OrderService,
     OrderSide,
     OrderStatus,
     OrderType,
+    PortfolioEngine,
     TradeProcessingStatus,
     TradeThroughEngine,
     create_paper_account,
@@ -472,3 +474,50 @@ def _replay_outcome() -> tuple[object, ...]:
 
 def test_event_replay_produces_deterministic_financial_outcome() -> None:
     assert _replay_outcome() == _replay_outcome()
+
+
+def test_multi_order_trade_rolls_back_all_allocations_when_later_fill_fails() -> None:
+    clock = ManualTime(1_000)
+    orders = OrderService(create_paper_account(ExchangeId.OKX), clock=clock)
+    portfolio = PortfolioEngine()
+    failure_count = 0
+
+    def inject(stage: str) -> None:
+        nonlocal failure_count
+        if stage == "ORDER":
+            failure_count += 1
+            if failure_count == 2:
+                raise RuntimeError("injected second allocation failure")
+
+    simulator = ExecutionSimulator(orders, portfolio=portfolio, failure_injector=inject)
+    uow = InMemoryUnitOfWork((orders.ledger, orders, simulator, portfolio))
+    engine = TradeThroughEngine(
+        simulation_environment_id="atomic-run",
+        exchange_id=ExchangeId.OKX,
+        instrument_id=INSTRUMENT,
+        simulator=simulator,
+        fee_schedule=FEES,
+        max_trade_age_ms=2_000,
+        unit_of_work=uow,
+    )
+    uow.add_participant(engine)
+    first = place_buy(orders, clock, limit="101", quantity="1", entry_ts_ms=1_100)
+    second = place_buy(orders, clock, limit="100", quantity="1", entry_ts_ms=1_200)
+    before_entries = orders.ledger.entries
+    event = trade_event("atomic-trade", price="99", quantity="2", side=TradeSide.SELL)
+
+    with pytest.raises(RuntimeError, match="second allocation"):
+        engine.process_trade(event, observed_ts_ms=2_001)
+
+    assert orders.get(first.order_id).filled_quantity == 0
+    assert orders.get(second.order_id).filled_quantity == 0
+    assert orders.ledger.entries == before_entries
+    assert simulator.executions() == ()
+    assert portfolio.positions() == ()
+
+    simulator.failure_injector = None
+    retried = engine.process_trade(event, observed_ts_ms=2_001)
+    assert [allocation.quantity for allocation in retried.allocations] == [
+        Decimal("1"),
+        Decimal("1"),
+    ]
