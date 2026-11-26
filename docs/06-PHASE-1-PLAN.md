@@ -173,6 +173,8 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 Task 1.5～1.8 的详细设计、测试矩阵及验收标准见 [`07-EXECUTION-ENGINE-DESIGN.md`](07-EXECUTION-ENGINE-DESIGN.md)。
 
+Task 1.10 的 REST Contract 见 [`09-REST-API-DESIGN.md`](09-REST-API-DESIGN.md)；Task 1.11 的 Proposed WebSocket Contract 见 [`10-REALTIME-SERVICE-DESIGN.md`](10-REALTIME-SERVICE-DESIGN.md)，须经负责人确认后实施。
+
 ## 4. 开发原则
 
 - Account Ledger 是模拟余额的权威来源，Order Model 是订单状态权威来源，Fill History 是成交权威来源。
