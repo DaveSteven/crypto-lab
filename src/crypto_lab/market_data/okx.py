@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
+from crypto_lab.market_data.normalizers import ticker_quality
 from crypto_lab.models import (
     DataQualityStatus,
     DataSourceType,
@@ -15,10 +16,58 @@ from crypto_lab.models import (
     OrderBookDelta,
     OrderBookSnapshot,
     PriceLevel,
+    Ticker,
     Trade,
     TradeSide,
     TransportType,
 )
+
+
+def normalize_okx_tickers(
+    payload: object,
+    *,
+    received_ts_ms: int,
+    source_type: DataSourceType = DataSourceType.LIVE,
+    raw_ref: str | None = None,
+) -> MarketEventEnvelope[Ticker]:
+    message = _mapping(payload, "OKX message")
+    argument = _mapping(message.get("arg"), "OKX message arg")
+    if argument.get("channel") != "tickers":
+        raise ValueError("OKX ticker normalizer requires tickers channel")
+    subscribed_instrument = _required_string(argument, "instId")
+    instrument_id = _canonical_spot_instrument(subscribed_instrument)
+    rows = _sequence(message.get("data"), "OKX message data")
+    if len(rows) != 1:
+        raise ValueError("OKX tickers message must contain exactly one data item")
+    item = _mapping(rows[0], "OKX tickers data item")
+    if item.get("instId") != subscribed_instrument:
+        raise ValueError("OKX ticker item instrument differs from subscription")
+    exchange_ts_ms = _required_nonnegative_int_string(item, "ts")
+    ticker = Ticker(
+        bid=_optional_decimal(item.get("bidPx")),
+        bid_size=_optional_nonnegative_decimal(item.get("bidSz")),
+        ask=_optional_decimal(item.get("askPx")),
+        ask_size=_optional_nonnegative_decimal(item.get("askSz")),
+        last=_optional_decimal(item.get("last")),
+        open_24h=_optional_decimal(item.get("open24h")),
+        high_24h=_optional_decimal(item.get("high24h")),
+        low_24h=_optional_decimal(item.get("low24h")),
+        base_volume_24h=_optional_nonnegative_decimal(item.get("vol24h")),
+        quote_volume_24h=_optional_nonnegative_decimal(item.get("volCcy24h")),
+    )
+    return MarketEventEnvelope[Ticker](
+        event_id=f"okx:{subscribed_instrument}:ticker:{exchange_ts_ms}",
+        event_type="TICKER",
+        exchange_id=ExchangeId.OKX,
+        instrument_id=instrument_id,
+        source_type=source_type,
+        transport=TransportType.WEBSOCKET,
+        exchange_ts_ms=exchange_ts_ms,
+        received_ts_ms=received_ts_ms,
+        raw_ref=raw_ref,
+        quality_status=ticker_quality(ticker),
+        payload=ticker,
+    )
 
 
 def normalize_okx_order_book(
@@ -215,6 +264,24 @@ def _positive_decimal(value: object, name: str) -> Decimal:
     result = _decimal(value, name)
     if result <= 0:
         raise ValueError(f"OKX {name} must be positive")
+    return result
+
+
+def _optional_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    result = _decimal(value, "optional price")
+    if result <= 0:
+        raise ValueError("OKX optional price must be positive when present")
+    return result
+
+
+def _optional_nonnegative_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    result = _decimal(value, "optional size")
+    if result < 0:
+        raise ValueError("OKX optional size cannot be negative when present")
     return result
 
 

@@ -2,7 +2,11 @@ from decimal import Decimal
 
 import pytest
 
-from crypto_lab.market_data import normalize_okx_order_book, normalize_okx_trades
+from crypto_lab.market_data import (
+    normalize_okx_order_book,
+    normalize_okx_tickers,
+    normalize_okx_trades,
+)
 from crypto_lab.models import OrderBookDelta, OrderBookSnapshot, TradeSide
 from crypto_lab.trading import normalize_okx_spot_rules
 
@@ -176,3 +180,50 @@ def test_okx_non_live_instrument_rules_are_rejected(state: str) -> None:
     }
     with pytest.raises(ValueError, match="live"):
         normalize_okx_spot_rules(payload, instrument="BTC-USDT", observed_ts_ms=1_000)
+
+
+def ticker_message(bid: str | None = "100", ask: str | None = "101") -> dict[str, object]:
+    item: dict[str, object] = {
+        "instId": "BTC-USDT",
+        "last": "101",
+        "askPx": ask,
+        "askSz": "2",
+        "bidPx": bid,
+        "bidSz": "3",
+        "open24h": "99",
+        "high24h": "103",
+        "low24h": "98",
+        "vol24h": "1000",
+        "volCcy24h": "100000",
+        "ts": "1000",
+    }
+    return {"arg": {"channel": "tickers", "instId": "BTC-USDT"}, "data": [item]}
+
+
+def test_okx_tickers_normalizes_websocket_message() -> None:
+    event = normalize_okx_tickers(ticker_message(), received_ts_ms=2_000)
+    assert event.event_id == "okx:BTC-USDT:ticker:1000"
+    assert event.event_type == "TICKER"
+    assert event.instrument_id == "okx:SPOT:BTC/USDT"
+    assert event.exchange_ts_ms == 1_000
+    assert event.transport.value == "WEBSOCKET"
+    assert event.quality_status.value == "VALID"
+    assert event.payload.bid == Decimal("100")
+    assert event.payload.ask == Decimal("101")
+
+
+def test_okx_tickers_without_bid_is_marked_incomplete() -> None:
+    event = normalize_okx_tickers(ticker_message(bid=None), received_ts_ms=2_000)
+    assert event.quality_status.value == "INCOMPLETE"
+    assert event.payload.bid is None
+
+
+def test_okx_tickers_rejects_wrong_channel_or_instrument() -> None:
+    wrong_channel = ticker_message()
+    wrong_channel["arg"] = {"channel": "trades", "instId": "BTC-USDT"}
+    with pytest.raises(ValueError, match="tickers channel"):
+        normalize_okx_tickers(wrong_channel, received_ts_ms=2_000)
+    mismatched = ticker_message()
+    mismatched["arg"] = {"channel": "tickers", "instId": "ETH-USDT"}
+    with pytest.raises(ValueError, match="differs"):
+        normalize_okx_tickers(mismatched, received_ts_ms=2_000)

@@ -1,5 +1,6 @@
 """Bounded single-process realtime delivery."""
 
+from crypto_lab.realtime.feed import OKX_PUBLIC_WS_URL, OkxMarketFeed
 from crypto_lab.realtime.hub import (
     EnvironmentEventHub,
     RealtimeConfig,
@@ -15,6 +16,8 @@ from crypto_lab.realtime.publisher import RealtimePublisher
 
 __all__ = [
     "EnvironmentEventHub",
+    "OKX_PUBLIC_WS_URL",
+    "OkxMarketFeed",
     "RealtimeConfig",
     "RealtimeEvent",
     "RealtimeHubRegistry",

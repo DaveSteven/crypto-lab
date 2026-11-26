@@ -97,7 +97,7 @@ Subprotocol: crypto-lab.v1
 
 订单簿面向前端发布当前有效快照，而不是要求浏览器重建交易所增量。原始高频增量仍由后端处理。
 
-当前代码尚未实现 Canonical `Candle` Model 和真实 Candle Adapter。Task 1.11 可以实现模型、校验和发布通道，但在真实来源完成前必须返回 `TOPIC_UNAVAILABLE`，不得由 Ticker 或 Last Price 伪造 OHLCV。
+当前代码已实现 Canonical `Candle` Model（区间对齐及 OHLC 校验）、OKX REST 历史 K 线 Adapter（`GET /api/v1/market/candles`，返回真实 OKX 公共数据）、OKX WebSocket Candle 标准化器及 `OkxMarketFeed` 实时喂送组件（订阅 tickers、trades、books 与 candle 频道，经 `MarketRealtimeBridge` 发布）。K 线只能来自真实 Canonical 数据，不得由 Ticker 或 Last Price 伪造 OHLCV。
 
 ## 6. 发布一致性
 
