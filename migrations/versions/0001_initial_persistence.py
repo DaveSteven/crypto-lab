@@ -11,8 +11,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    metadata.create_all(bind=op.get_bind(), checkfirst=False)
+    metadata.create_all(
+        bind=op.get_bind(),
+        tables=[
+            table
+            for name, table in metadata.tables.items()
+            if name != "api_idempotency_keys"
+        ],
+        checkfirst=False,
+    )
 
 
 def downgrade() -> None:
-    metadata.drop_all(bind=op.get_bind(), checkfirst=False)
+    metadata.drop_all(
+        bind=op.get_bind(),
+        tables=[
+            table
+            for name, table in metadata.tables.items()
+            if name != "api_idempotency_keys"
+        ],
+        checkfirst=False,
+    )

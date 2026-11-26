@@ -201,7 +201,7 @@ class PostgresStore:
         self._insert_executions(environment_id, executions)
         self._upsert_positions(portfolio.positions(), executions)
         if scheduler is not None:
-            self._replace_schedule(environment_id, scheduler)
+            self._replace_schedule(environment_id, ledger.account.account_id, scheduler)
 
     def restore_account_ledger(
         self,
@@ -249,9 +249,18 @@ class PostgresStore:
         return ledger
 
     def restore_orders(self, ledger: AccountLedger, environment_id: str) -> OrderService:
+        next_sequence = self.session.execute(
+            select(schema.paper_orders.c.order_sequence)
+            .where(schema.paper_orders.c.environment_id == environment_id)
+            .order_by(schema.paper_orders.c.order_sequence.desc())
+            .limit(1)
+        ).scalar_one_or_none()
         rows = self.session.execute(
             select(schema.paper_orders)
-            .where(schema.paper_orders.c.environment_id == environment_id)
+            .where(
+                schema.paper_orders.c.environment_id == environment_id,
+                schema.paper_orders.c.account_id == ledger.account.account_id,
+            )
             .order_by(schema.paper_orders.c.order_sequence)
         ).mappings()
         restored = tuple(
@@ -264,7 +273,7 @@ class PostgresStore:
         service.restore_state(
             (
                 {order.order_id: order for order in restored},
-                max((o.order_sequence for o in restored), default=0) + 1,
+                (next_sequence or 0) + 1,
             )
         )
         return service
@@ -335,7 +344,12 @@ class PostgresStore:
     ) -> ExecutionScheduler:
         rows = self.session.execute(
             select(schema.scheduled_executions)
-            .where(schema.scheduled_executions.c.environment_id == environment_id)
+            .where(
+                schema.scheduled_executions.c.environment_id == environment_id,
+                schema.scheduled_executions.c.order_id.in_(
+                    order.order_id for order in orders.orders()
+                ),
+            )
             .order_by(
                 schema.scheduled_executions.c.scheduled_execution_ts_ms,
                 schema.scheduled_executions.c.order_sequence,
@@ -519,10 +533,17 @@ class PostgresStore:
                 )
             )
 
-    def _replace_schedule(self, environment_id: str, scheduler: ExecutionScheduler) -> None:
+    def _replace_schedule(
+        self, environment_id: str, account_id: str, scheduler: ExecutionScheduler
+    ) -> None:
         self.session.execute(
             delete(schema.scheduled_executions).where(
-                schema.scheduled_executions.c.environment_id == environment_id
+                schema.scheduled_executions.c.environment_id == environment_id,
+                schema.scheduled_executions.c.order_id.in_(
+                    select(schema.paper_orders.c.order_id).where(
+                        schema.paper_orders.c.account_id == account_id
+                    )
+                ),
             )
         )
         pending = scheduler.snapshot_state()[0].values()
