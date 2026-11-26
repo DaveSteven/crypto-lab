@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 
 /**
- * End-to-end trading flow against the real backend with the exchange feed
- * disabled (deterministic): limit orders never fill and end in
- * CANCELED/REJECTED via the scheduler — both outcomes are accepted.
+ * End-to-end trading flow against the real backend with the SYNTHETIC scripted
+ * feed. A limit buy far below the synthetic price rests unfilled; cancelling or
+ * a scheduler end state are both accepted outcomes.
  */
 const UNIQUE = `e2e-${Date.now()}`
 
@@ -31,12 +31,14 @@ test('bootstrap, place limit intent, inspect activity tabs, balances', async ({
   await page.getByLabel('数量（BTC）').fill('0.01')
   await page.getByLabel('限价（USDT）').fill('50000')
   await page.getByRole('button', { name: '买入提交' }).click()
-  await expect(page.getByRole('status')).toContainText('订单已提交')
+  // Every order goes through the confirmation dialog (docs/12 §11.5).
+  await page.getByRole('dialog', { name: '确认下单' }).getByRole('button', { name: '确认提交' }).click()
+  await expect(page.getByRole('status').filter({ hasText: '订单已提交' })).toBeVisible()
 
   // Account Activity Panel: 当前委托 shows the committed order.
   await page.getByRole('tab', { name: '当前委托' }).click()
   await expect(page.getByRole('columnheader', { name: '限价' })).toBeVisible()
-  await expect(page.getByText('50000')).toBeVisible()
+  await expect(page.getByRole('cell', { name: '50000', exact: true })).toBeVisible()
 
   // The scheduler may reject the order (no executable book with the feed
   // off) before the cancel lands; both end states are valid outcomes.

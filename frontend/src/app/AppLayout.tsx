@@ -77,6 +77,7 @@ function ConnectionBadge() {
 export function AppLayout() {
   const instrumentId = useInstrumentStore((state) => state.instrumentId)
   const quality = useMarketStore((state) => state.quality[instrumentId])
+  const hasTicker = useMarketStore((state) => state.tickers[instrumentId] !== undefined)
   const lastEventTsMs = useConnectionStore((state) => state.lastEventTsMs)
   const status = useConnectionStore((state) => state.status)
 
@@ -156,7 +157,8 @@ export function AppLayout() {
           />
           <StatusDot
             tone={quality === undefined || quality.status === 'VALID' ? 'positive' : 'warning'}
-            label={`行情质量 ${quality?.status ?? '等待'}`}
+            // No degrade event + a live ticker means VALID (same default as chart/order entry/markets).
+            label={`行情质量 ${quality?.status ?? (hasTicker ? 'VALID' : '等待')}`}
           />
           <span className="numeric" title="最近行情接收时间">
             最近行情 {lastEventTsMs !== null ? new Date(lastEventTsMs).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}

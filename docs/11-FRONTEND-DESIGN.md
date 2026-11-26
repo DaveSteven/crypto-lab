@@ -151,7 +151,7 @@ API Decimal 字符串保留精度；Zod 校验响应结构；decimal.js 承担�
 - **Unit（Vitest）**：Decimal 处理、表单校验、状态映射、Candle 合并、序列处理、事件去重、布局配置持久化——已覆盖核心部分，随新模块补充。
 - **Component（RTL）**：Order Entry / Preview / 状态 / 取消 / 连接状态 / 质量 / Empty-Error / Term Tooltip——已有基础，按 docs/12 补充确认 Dialog 与 Tooltip。
 - **Integration**：REST Snapshot + WS 更新（已实现层测试）、Reconnect/Replay/Resync/State Version（已覆盖）、Environment Switching、周期切换、分页、重复/迟到事件（1.12.6 补充）。
-- **E2E（Playwright）**：真实后端 + 独立测试库 + 关闭 Feed；已覆盖引导/下单意图/订单表/账户/会话恢复；补充确认流程、成交与余额变化、行情失效禁用、布局持久化。**运行须知：本机系统代理会拦截 Playwright 的就绪探测，须以 `env -u HTTP_PROXY -u HTTPS_PROXY` 运行**（已验证）。
+- **E2E（Playwright）**：真实后端 + 独立测试库 + SYNTHETIC 脚本化行情（`tests/support/e2e_server.py`，仅测试用，库名须含 test）；已覆盖确认流程、成交与余额变化、行情失效禁用与恢复、布局持久化、环境切换隔离、桌面矩阵、可访问性与性能（`workers: 1`）。**运行须知：本机系统代理会拦截 Playwright 的就绪探测，须以 `env -u HTTP_PROXY -u HTTPS_PROXY` 运行**（已验证）。
 - **桌面验收矩阵**：1280×720 / 1440×900 / 1920×1080 / 2560×1440（docs/12 §21.1）；不要求移动端 E2E。
 
 ## 10. 差距清单（现行有效）

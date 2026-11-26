@@ -20,6 +20,7 @@ import {
   allocate,
   buildOrderPreview,
 } from './orderPreview'
+import { formatDecimal } from '@/shared/lib/format'
 import { Button, Dialog, Input, Label, Select, TermTip } from '@/shared/ui'
 
 const EMPTY_FORM: OrderFormValues = {
@@ -132,14 +133,15 @@ export function OrderEntryPanel() {
   return (
     <section
       aria-label="下单"
-      className="flex h-full flex-col overflow-auto rounded-[4px] border border-line bg-surface"
+      className="flex h-full flex-col overflow-hidden rounded-[4px] border border-line bg-surface"
     >
       <header className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
         <h2 className="text-sm font-medium text-ink">下单</h2>
         {!marketOk && <Badge text="行情不可用" />}
       </header>
 
-      <form className="space-y-3 p-3" onSubmit={handleSubmit} noValidate>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit} noValidate>
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
         {!tradable && (
           <p role="alert" className="rounded-[6px] bg-red-50 px-2 py-1.5 text-xs text-red-700">
             {!marketOk
@@ -190,7 +192,7 @@ export function OrderEntryPanel() {
         <p className="numeric flex justify-between text-[11px] text-ink-muted" data-testid="available-balance">
           <span>可用余额</span>
           <span>
-            {values.side === 'BUY' ? `${availableQuote} ${quoteAsset}` : `${availableBase} ${baseAsset}`}
+            {values.side === 'BUY' ? `${formatDecimal(availableQuote)} ${quoteAsset}` : `${formatDecimal(availableBase)} ${baseAsset}`}
           </span>
         </p>
 
@@ -294,6 +296,10 @@ export function OrderEntryPanel() {
           </p>
         )}
 
+        </div>
+
+        {/* Submit stays pinned: always reachable at the 1280x720 minimum viewport. */}
+        <div className="shrink-0 space-y-1 border-t border-line p-3">
         <Button
           variant={values.side === 'BUY' ? 'buy' : 'sell'}
           className="w-full"
@@ -305,6 +311,7 @@ export function OrderEntryPanel() {
         <p className="text-[11px] leading-relaxed text-ink-muted">
           前端只提交订单意图；成交价格、手续费与结果由服务端模拟撮合决定。每次提交使用新的幂等键。
         </p>
+        </div>
       </form>
 
       <Dialog open={pending !== null} title="确认下单" onClose={() => !submitting && setPending(null)}>

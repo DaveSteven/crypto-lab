@@ -51,11 +51,11 @@ export function TradingWorkspace() {
             <Panel defaultSize={54} minSize={30}>
               <MarketChartPanel />
             </Panel>
-            <PanelResizeHandle className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
+            <PanelResizeHandle aria-label="调整图表与订单簿宽度" className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
             <Panel defaultSize={21} minSize={16}>
               <MarketDepthPanel />
             </Panel>
-            <PanelResizeHandle className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
+            <PanelResizeHandle aria-label="调整订单簿与下单面板宽度" className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
             <Panel defaultSize={25} minSize={20}>
               {/* Keyed by instrument: switching pair discards drafts (prices don't carry over). */}
               <OrderEntryPanel key={instrumentId} />
@@ -63,7 +63,7 @@ export function TradingWorkspace() {
           </PanelGroup>
         </Panel>
 
-        <PanelResizeHandle className="h-1 rounded hover:bg-brand/20 focus-visible:outline-2 focus-visible:outline-brand" />
+        <PanelResizeHandle aria-label="调整行情区与账户活动面板高度" className="h-1 rounded hover:bg-brand/20 focus-visible:outline-2 focus-visible:outline-brand" />
 
         {/* Account Activity Panel — default 28% (docs/12 §7.2/§12). */}
         <Panel defaultSize={28} minSize={10}>
