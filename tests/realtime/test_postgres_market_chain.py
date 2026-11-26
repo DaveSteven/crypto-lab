@@ -255,7 +255,7 @@ def test_market_buy_executes_and_commits_full_chain(chain, database_url) -> None
         event for event in chain.publisher.events if event.topic == "positions"
     ]
     assert len(position_events) == 1
-    assert position_events[0].payload["quantity"] == "1"
+    assert Decimal(position_events[0].payload["quantity"]) == Decimal("1")
     assert position_events[0].payload["instrument_id"] == INSTRUMENT
 
 
