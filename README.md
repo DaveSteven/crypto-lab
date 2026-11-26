@@ -73,6 +73,17 @@ python -m pytest
 python -m ruff check .
 ```
 
+Task 1.13 多环境性能基线仅允许对名称包含 `test` 的 PostgreSQL 数据库运行，且会清空该测试库：
+
+```bash
+export CRYPTO_LAB_TEST_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:5432/crypto_lab_performance_test'
+python scripts/run_phase1_performance_baseline.py \
+  --output data/reports/phase1-performance-baseline.json \
+  --confirm-reset-test-database
+```
+
+默认使用 1 / 3 / 5 / 10 / 20 个环境和 20 个确定性订单簿事件，生成结构化 JSON 报告；不访问交易所网络。
+
 运行公开 REST API smoke test：
 
 ```bash
@@ -138,6 +149,7 @@ data/             本地实验数据（运行数据不提交 Git）
 - [开发规范](docs/AGENT.md)
 - [Phase 1 开发计划](docs/06-PHASE-1-PLAN.md)
 - [REST API 设计](docs/09-REST-API-DESIGN.md)
+- [Phase 1 多环境性能基线](docs/14-PHASE-1-PERFORMANCE-BASELINE.md)
 
 候选交易所、依赖和接口行为尚待真实验证。未经验证的内容不得标记为已验证结果。
 
