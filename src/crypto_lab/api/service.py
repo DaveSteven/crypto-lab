@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -18,6 +18,7 @@ from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
 from crypto_lab.models import ExchangeId
 from crypto_lab.persistence import PostgresUnitOfWork, schema
+from crypto_lab.realtime import RealtimeEvent, RealtimePublisher
 from crypto_lab.trading import (
     ExecutionLatency,
     FeeSchedule,
@@ -56,9 +57,16 @@ class ApplicationService:
         *,
         fee_schedule: FeeSchedule | None = None,
         now_ms: Callable[[], int] = utc_now_ms,
+        realtime_publisher: RealtimePublisher | None = None,
     ) -> None:
         self.engine = engine
-        self.uow = PostgresUnitOfWork(engine)
+        self.realtime_publisher = realtime_publisher
+        self.uow = PostgresUnitOfWork(
+            engine,
+            after_commit=(
+                realtime_publisher.publish_committed if realtime_publisher else None
+            ),
+        )
         self.fee_schedule = fee_schedule
         self.now_ms = now_ms
 
@@ -151,6 +159,17 @@ class ApplicationService:
             response = _json_value(
                 ledger.account.model_dump(mode="python")
                 | {"environment_id": environment_id, "balances": ledger.balances()}
+            )
+            state_version = store.bump_state_version(environment_id, clock.now_utc_ms())
+            response["state_version"] = state_version
+            self._stage_account_events(
+                store,
+                environment_id=environment_id,
+                account_id=ledger.account.account_id,
+                state_version=state_version,
+                transaction_id=f"account:{ledger.account.account_id}:{state_version}",
+                orders=(),
+                balances=[_json_value(item) for item in ledger.balances()],
             )
             self._record_idempotency(
                 store,
@@ -276,6 +295,17 @@ class ApplicationService:
             )
             store.persist_id_generator(environment_id, ids)
             response = _json_value(order.model_dump(mode="python"))
+            state_version = store.bump_state_version(environment_id, clock.now_utc_ms())
+            response["state_version"] = state_version
+            self._stage_account_events(
+                store,
+                environment_id=environment_id,
+                account_id=request.account_id,
+                state_version=state_version,
+                transaction_id=f"order:{order.order_id}:{state_version}",
+                orders=[response],
+                balances=[_json_value(item) for item in ledger.balances()],
+            )
             self._record_idempotency(
                 store,
                 environment_id,
@@ -362,6 +392,17 @@ class ApplicationService:
             )
             store.persist_id_generator(environment_id, ids)
             response = _json_value(canceled.model_dump(mode="python"))
+            state_version = store.bump_state_version(environment_id, clock.now_utc_ms())
+            response["state_version"] = state_version
+            self._stage_account_events(
+                store,
+                environment_id=environment_id,
+                account_id=order_row["account_id"],
+                state_version=state_version,
+                transaction_id=f"cancel:{order_id}:{state_version}",
+                orders=[response],
+                balances=[_json_value(item) for item in ledger.balances()],
+            )
             self._record_idempotency(
                 store,
                 environment_id,
@@ -396,13 +437,69 @@ class ApplicationService:
             "execution was not found",
         )
 
+    def snapshot(self, environment_id: str, account_id: str) -> dict[str, Any]:
+        with self.uow.session_factory.begin() as session:
+            environment = session.execute(
+                select(schema.simulation_environments).where(
+                    schema.simulation_environments.c.environment_id == environment_id
+                )
+            ).mappings().one_or_none()
+            if environment is None:
+                raise ApplicationError(
+                    "ENVIRONMENT_NOT_FOUND",
+                    "simulation environment was not found",
+                    status_code=404,
+                )
+            account = session.execute(
+                select(schema.paper_accounts).where(
+                    schema.paper_accounts.c.environment_id == environment_id,
+                    schema.paper_accounts.c.account_id == account_id,
+                )
+            ).mappings().one_or_none()
+            if account is None:
+                raise ApplicationError(
+                    "ACCOUNT_NOT_FOUND", "paper account was not found", status_code=404
+                )
+            def rows(table: Any, condition: Any, order_by: Any) -> list[dict[str, Any]]:
+                result = session.execute(
+                    select(table).where(condition).order_by(order_by)
+                ).mappings()
+                return [_row(item) for item in result]
+
+            return {
+                "environment_id": environment_id,
+                "account_id": account_id,
+                "state_version": int(environment["state_version"]),
+                "account": _row(account),
+                "balances": rows(
+                    schema.asset_balances,
+                    schema.asset_balances.c.account_id == account_id,
+                    schema.asset_balances.c.asset,
+                ),
+                "orders": rows(
+                    schema.paper_orders,
+                    schema.paper_orders.c.account_id == account_id,
+                    schema.paper_orders.c.order_sequence,
+                ),
+                "executions": rows(
+                    schema.executions,
+                    schema.executions.c.account_id == account_id,
+                    schema.executions.c.execution_sequence,
+                ),
+                "positions": rows(
+                    schema.positions,
+                    schema.positions.c.account_id == account_id,
+                    schema.positions.c.instrument_id,
+                ),
+            }
+
     def ready(self) -> bool:
         try:
             with self.engine.connect() as connection:
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one_or_none()
-                return revision == "0002_api_idempotency"
+                return revision == "0003_realtime_state_version"
         except Exception:
             return False
 
@@ -492,3 +589,45 @@ class ApplicationService:
                 created_ts_ms=self.now_ms(),
             )
         )
+
+    def _stage_account_events(
+        self,
+        store: Any,
+        *,
+        environment_id: str,
+        account_id: str,
+        state_version: int,
+        transaction_id: str,
+        orders: Sequence[dict[str, Any]],
+        balances: list[dict[str, Any]],
+    ) -> None:
+        event_index = 0
+        for order in orders:
+            store.stage_realtime_event(
+                RealtimeEvent(
+                    topic="orders",
+                    event_id=f"{transaction_id}:order:{order['order_id']}",
+                    event_ts_ms=self.now_ms(),
+                    payload=order,
+                    account_id=account_id,
+                    order_id=str(order["order_id"]),
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1
+        for balance in balances:
+            store.stage_realtime_event(
+                RealtimeEvent(
+                    topic="balances",
+                    event_id=f"{transaction_id}:balance:{balance['asset']}",
+                    event_ts_ms=self.now_ms(),
+                    payload=balance,
+                    account_id=account_id,
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1

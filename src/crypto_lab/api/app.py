@@ -19,7 +19,12 @@ from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
 from crypto_lab.api.service import ApplicationService
 from crypto_lab.persistence import PersistenceError
-from crypto_lab.realtime import RealtimeHubRegistry, ReplayUnavailable, parse_client_message
+from crypto_lab.realtime import (
+    RealtimeHubRegistry,
+    RealtimePublisher,
+    ReplayUnavailable,
+    parse_client_message,
+)
 from crypto_lab.realtime.protocol import (
     PingMessage,
     PongMessage,
@@ -40,6 +45,8 @@ def create_app(
 ) -> FastAPI:
     owns_engine = engine is None and service is None
     actual_engine = engine
+    actual_realtime = realtime or RealtimeHubRegistry()
+    publisher = RealtimePublisher(actual_realtime)
     if service is None:
         url = database_url or os.getenv("CRYPTO_LAB_DATABASE_URL")
         if actual_engine is None:
@@ -53,11 +60,14 @@ def create_app(
                 maker_rate=Decimal("0.001"),
                 taker_rate=Decimal("0.001"),
             ),
+            realtime_publisher=publisher,
         )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        publisher.start(asyncio.get_running_loop())
         yield
+        publisher.stop()
         if owns_engine and actual_engine is not None:
             actual_engine.dispose()
 
@@ -68,7 +78,8 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.service = service
-    app.state.realtime = realtime or RealtimeHubRegistry()
+    app.state.realtime = actual_realtime
+    app.state.realtime_publisher = publisher
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):
@@ -180,6 +191,10 @@ def create_app(
     @app.get("/api/v1/environments/{environment_id}/executions/{execution_id}")
     def get_execution(environment_id: str, execution_id: str) -> dict[str, Any]:
         return service.get_execution(environment_id, execution_id)
+
+    @app.get("/api/v1/environments/{environment_id}/snapshot")
+    def snapshot(environment_id: str, account_id: str) -> dict[str, Any]:
+        return service.snapshot(environment_id, account_id)
 
     @app.websocket("/api/v1/ws/environments/{environment_id}")
     async def realtime_endpoint(websocket: WebSocket, environment_id: str) -> None:

@@ -185,7 +185,7 @@ Execution 只读，不提供创建、修改或删除接口。
 - 创建环境、账户、订单及取消均强制 `Idempotency-Key`；同键异载荷返回 409。
 - 订单提交复用领域层冻结和 `ExecutionScheduler`，成功后持久化为 `PENDING_EXECUTION`。
 - 多账户恢复只装载所属订单及调度项，订单序列仍在环境范围内保持唯一。
-- `/health/ready` 同时验证数据库连接及 Alembic Head `0002_api_idempotency`。
+- `/health/ready` 同时验证数据库连接及当前 Alembic Head。
 - TestClient 验证 OpenAPI、严格 Schema、Decimal 字符串、错误信封和请求 ID。
 - 临时 PostgreSQL 16 验证幂等、资源归属、冻结/释放及多账户调度隔离。
 - 完整回归结果：230 passed；无外部交易所网络调用。

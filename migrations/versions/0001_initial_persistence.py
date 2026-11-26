@@ -20,6 +20,13 @@ def upgrade() -> None:
         ],
         checkfirst=False,
     )
+    # Keep this historical revision fixed even as runtime metadata gains columns.
+    op.drop_constraint(
+        "ck_environment_state_version_nonnegative",
+        "simulation_environments",
+        type_="check",
+    )
+    op.drop_column("simulation_environments", "state_version")
 
 
 def downgrade() -> None:

@@ -27,9 +27,11 @@ simulation_environments = Table(
     Column("id_namespace", String(200), nullable=False, unique=True),
     Column("last_event_ts_ms", BigInteger),
     Column("next_arrival_sequence", BigInteger, nullable=False),
+    Column("state_version", BigInteger, nullable=False),
     Column("created_ts_ms", BigInteger, nullable=False),
     Column("updated_ts_ms", BigInteger, nullable=False),
     CheckConstraint("next_arrival_sequence > 0", name="ck_environment_next_sequence_positive"),
+    CheckConstraint("state_version >= 0", name="ck_environment_state_version_nonnegative"),
 )
 
 paper_accounts = Table(

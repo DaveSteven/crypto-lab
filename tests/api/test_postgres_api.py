@@ -132,3 +132,26 @@ def test_two_accounts_keep_independent_pending_schedules(service) -> None:
         )
     orders = service.list_orders(environment_id, 10, None, "PENDING_EXECUTION")
     assert {order["account_id"] for order in orders} == {first_account, second_account}
+
+
+def test_authoritative_snapshot_has_atomic_state_version(service) -> None:
+    environment_id, account_id = create_environment_and_account(service)
+    before = service.snapshot(environment_id, account_id)
+    assert before["state_version"] == 1
+    assert before["orders"] == []
+    service.create_order(
+        environment_id,
+        OrderCreate(
+            account_id=account_id,
+            instrument_id="okx:SPOT:BTC/USDT",
+            side="BUY",
+            order_type="LIMIT",
+            quantity="1",
+            limit_price="10",
+        ),
+        "snapshot-order",
+    )
+    after = service.snapshot(environment_id, account_id)
+    assert after["state_version"] == 2
+    assert len(after["orders"]) == 1
+    assert after["balances"][0]["locked"] == "10.020000000000000000000000"

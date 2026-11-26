@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -40,6 +40,7 @@ class PersistenceError(RuntimeError):
 class PostgresStore:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.realtime_events: list[object] = []
 
     def create_environment(
         self,
@@ -58,11 +59,28 @@ class PostgresStore:
                 id_namespace=id_namespace,
                 last_event_ts_ms=None,
                 next_arrival_sequence=1,
+                state_version=0,
                 created_ts_ms=created_ts_ms,
                 updated_ts_ms=created_ts_ms,
             )
             .on_conflict_do_nothing(index_elements=["environment_id"])
         )
+
+    def bump_state_version(self, environment_id: str, updated_ts_ms: int) -> int:
+        return int(
+            self.session.execute(
+                update(schema.simulation_environments)
+                .where(schema.simulation_environments.c.environment_id == environment_id)
+                .values(
+                    state_version=schema.simulation_environments.c.state_version + 1,
+                    updated_ts_ms=updated_ts_ms,
+                )
+                .returning(schema.simulation_environments.c.state_version)
+            ).scalar_one()
+        )
+
+    def stage_realtime_event(self, event: object) -> None:
+        self.realtime_events.append(event)
 
     def lock_environment(self, environment_id: str) -> None:
         row = self.session.execute(
@@ -575,8 +593,14 @@ class PostgresStore:
 
 
 class PostgresUnitOfWork:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        after_commit: Callable[[str, tuple[object, ...]], None] | None = None,
+    ) -> None:
         self.session_factory = sessionmaker(engine, expire_on_commit=False)
+        self.after_commit = after_commit
 
     @contextmanager
     def transaction(self, environment_id: str) -> Iterator[PostgresStore]:
@@ -584,6 +608,8 @@ class PostgresUnitOfWork:
             store = PostgresStore(session)
             store.lock_environment(environment_id)
             yield store
+        if self.after_commit is not None and store.realtime_events:
+            self.after_commit(environment_id, tuple(store.realtime_events))
 
     @contextmanager
     def bootstrap(self) -> Iterator[PostgresStore]:

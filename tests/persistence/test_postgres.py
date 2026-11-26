@@ -145,6 +145,34 @@ def test_database_transaction_rolls_back_event_marker_on_failure(engine) -> None
         assert connection.execute(select(schema.simulation_events.c.event_id)).all() == []
 
 
+def test_after_commit_events_publish_only_after_success(engine) -> None:
+    published = []
+    uow = PostgresUnitOfWork(
+        engine,
+        after_commit=lambda environment_id, events: published.append(
+            (environment_id, events)
+        ),
+    )
+    with uow.bootstrap() as store:
+        store.create_environment(
+            environment_id="environment-publish",
+            name="Publish Test",
+            id_namespace="publish-test",
+            created_ts_ms=1_000,
+        )
+    with uow.transaction("environment-publish") as store:
+        store.stage_realtime_event("committed")
+    assert published == [("environment-publish", ("committed",))]
+
+    with (
+        pytest.raises(RuntimeError, match="rollback"),
+        uow.transaction("environment-publish") as store,
+    ):
+        store.stage_realtime_event("rolled-back")
+        raise RuntimeError("rollback")
+    assert published == [("environment-publish", ("committed",))]
+
+
 def test_decimal_exceeding_database_scale_is_rejected_before_write(engine) -> None:
     ids, clock, ledger, orders, portfolio, simulator = trading_state("precision-test")
     invalid = orders.orders()[0].model_copy(
