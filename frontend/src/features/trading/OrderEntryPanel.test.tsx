@@ -7,6 +7,7 @@ import { OrderEntryPanel } from './OrderEntryPanel'
 import { useSessionStore } from '@/app/sessionStore'
 import { useMarketStore } from '@/features/market/marketStore'
 import { useConnectionStore } from '@/app/connectionStore'
+import { useInstrumentStore } from '@/features/market/instrumentStore'
 import { useOrderDraftStore } from './orderDraftStore'
 import { useTradingStore } from './tradingStore'
 import { act } from '@testing-library/react'
@@ -167,5 +168,27 @@ describe('OrderEntryPanel', () => {
     expect(screen.getByTestId('available-balance')).toHaveTextContent('2 BTC')
     await user.click(screen.getByRole('button', { name: '50%' }))
     expect(screen.getByLabelText('数量（BTC）')).toHaveValue('1')
+  })
+
+  test('orders target the selected instrument and use its own asset labels', async () => {
+    const user = userEvent.setup()
+    useInstrumentStore.getState().setInstrument('okx:SPOT:ETH/USDT')
+    useTradingStore.setState({ balances: [{ asset: 'ETH', available: '3', locked: '0' }] })
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('*/api/v1/environments/env-1/orders', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ error: { code: 'X', message: 'stop', details: {}, request_id: 'r' } }, { status: 400 })
+      }),
+    )
+    render(<OrderEntryPanel />)
+    await user.click(screen.getByRole('button', { name: '卖出' }))
+    expect(screen.getByTestId('available-balance')).toHaveTextContent('3 ETH')
+    await user.type(screen.getByLabelText('数量（ETH）'), '1')
+    await user.click(screen.getByRole('button', { name: /提交$/ }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('ETH/USDT')
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    await waitFor(() => expect(body.instrument_id).toBe('okx:SPOT:ETH/USDT'))
+    useInstrumentStore.getState().setInstrument('okx:SPOT:BTC/USDT')
   })
 })

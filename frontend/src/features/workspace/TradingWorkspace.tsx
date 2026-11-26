@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { useInstrumentStore } from '@/features/market/instrumentStore'
 import { MarketDepthPanel } from '@/features/market/MarketDepthPanel'
 import { MarketChartPanel } from '@/features/market/MarketChartPanel'
 import { OrderEntryPanel } from '@/features/trading/OrderEntryPanel'
@@ -31,6 +32,7 @@ const ACTIVITY_TABS = [
 ] as const
 
 export function TradingWorkspace() {
+  const instrumentId = useInstrumentStore((state) => state.instrumentId)
   const connectionStatus = useConnectionStore((state) => state.status)
   const sync = accountSyncState(connectionDisplay(connectionStatus))
   const [activityTab, setActivityTab] = useState<ActivityTab>('open')
@@ -55,7 +57,8 @@ export function TradingWorkspace() {
             </Panel>
             <PanelResizeHandle className="h-full w-1 rounded hover:bg-brand/20 data-[resize-handle-state]:bg-brand/30 focus-visible:outline-2 focus-visible:outline-brand" />
             <Panel defaultSize={25} minSize={20}>
-              <OrderEntryPanel />
+              {/* Keyed by instrument: switching pair discards drafts (prices don't carry over). */}
+              <OrderEntryPanel key={instrumentId} />
             </Panel>
           </PanelGroup>
         </Panel>

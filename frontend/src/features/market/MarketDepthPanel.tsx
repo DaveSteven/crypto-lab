@@ -1,12 +1,12 @@
 import { memo, useMemo, useState } from 'react'
 import { useMarketStore } from './marketStore'
+import { useInstrument } from './instrumentStore'
 import { buildBookView, type BookRow } from './orderBook'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
 import { EmptyState, Tabs } from '@/shared/ui'
 import { cn } from '@/shared/lib/utils'
 import { formatTime } from '@/shared/lib/format'
 
-const INSTRUMENT = 'okx:SPOT:BTC/USDT'
 const TABS = [
   { value: 'book', label: '订单簿' },
   { value: 'trades', label: '最新成交' },
@@ -44,6 +44,7 @@ function Row({
 }
 
 const OrderBookView = memo(function OrderBookView() {
+  const { instrumentId: INSTRUMENT, base, quote } = useInstrument()
   const book = useMarketStore((state) => state.orderBooks[INSTRUMENT])
   const quality = useMarketStore((state) => state.quality[INSTRUMENT])
   const qualityOk = (quality?.status ?? 'VALID') === 'VALID'
@@ -62,8 +63,8 @@ const OrderBookView = memo(function OrderBookView() {
         </p>
       )}
       <div className="grid shrink-0 grid-cols-2 px-3 py-1 text-[11px] text-ink-muted">
-        <span>价格 (USDT)</span>
-        <span className="text-right">数量 (BTC)</span>
+        <span>价格 ({quote})</span>
+        <span className="text-right">数量 ({base})</span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
         {/* Asks are drawn highest→lowest so the best ask sits next to the spread. */}
@@ -89,6 +90,7 @@ const OrderBookView = memo(function OrderBookView() {
 })
 
 const MarketTradesView = memo(function MarketTradesView() {
+  const { instrumentId: INSTRUMENT } = useInstrument()
   const trades = useMarketStore((state) => state.trades[INSTRUMENT])
   if (!trades || trades.length === 0) return <EmptyState message="暂无最新成交，等待行情。" />
   return (

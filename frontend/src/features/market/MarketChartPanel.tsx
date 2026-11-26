@@ -24,9 +24,10 @@ import {
   type CandleBar,
 } from './candles'
 import { change24h } from './ticker'
+import { DEFAULT_INSTRUMENT, useInstrument } from './instrumentStore'
 import { Badge, Button } from '@/shared/ui'
 
-export const INSTRUMENT = 'okx:SPOT:BTC/USDT'
+export const INSTRUMENT = DEFAULT_INSTRUMENT
 const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const
 export type CandleInterval = (typeof INTERVALS)[number]
 
@@ -47,6 +48,7 @@ function formatTime(tsMs: number | null | undefined): string {
 
 /** Market Header strip + candlestick chart (docs/12 §8/§9). */
 export function MarketChartPanel() {
+  const { instrumentId: instrument, exchange, marketType, base, quote } = useInstrument()
   const [interval, setIntervalState] = useState<CandleInterval>('1m')
   const [loading, setLoading] = useState(false)
   const [hasEarlier, setHasEarlier] = useState(true)
@@ -58,10 +60,10 @@ export function MarketChartPanel() {
   const [legend, setLegend] = useState<CandleBar | null>(null)
   const executions = useTradingStore((state) => state.executions)
 
-  const key = candleKey(INSTRUMENT, interval)
+  const key = candleKey(instrument, interval)
   const bars = useMarketStore((state) => state.candles[key]) ?? EMPTY_BARS
-  const ticker = useMarketStore((state) => state.tickers[INSTRUMENT])
-  const quality = useMarketStore((state) => state.quality[INSTRUMENT])
+  const ticker = useMarketStore((state) => state.tickers[instrument])
+  const quality = useMarketStore((state) => state.quality[instrument])
   const status = useConnectionStore((state) => state.status)
   const display = connectionDisplay(status)
   const seedCandles = useMarketStore((state) => state.seedCandles)
@@ -69,18 +71,18 @@ export function MarketChartPanel() {
 
   // ADR 0008: the visible interval drives the live upstream candle channel.
   useEffect(() => {
-    gateway.setCandleInterval(INSTRUMENT, interval)
-  }, [interval])
+    gateway.setCandleInterval(instrument, interval)
+  }, [instrument, interval])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     void rest
-      .candleHistory(INSTRUMENT, interval, { limit: 200 })
+      .candleHistory(instrument, interval, { limit: 200 })
       .then((result) => {
         if (cancelled) return
         seedCandles(
-          INSTRUMENT,
+          instrument,
           interval,
           result.items.map((item) => barFromPayload(item.event_id, item.payload)),
         )
@@ -95,7 +97,7 @@ export function MarketChartPanel() {
     return () => {
       cancelled = true
     }
-  }, [interval, seedCandles])
+  }, [instrument, interval, seedCandles])
 
   // Gap backfill after a resync (docs/12 §9.4).
   const resyncRef = useRef(display === 'resync')
@@ -111,15 +113,15 @@ export function MarketChartPanel() {
     if (local.length === 0) return
     const newest = local[local.length - 1].openTsMs
     void rest
-      .candleHistory(INSTRUMENT, interval, { limit: 100, after: newest })
+      .candleHistory(instrument, interval, { limit: 100, after: newest })
       .then((result) => {
         const state = useMarketStore.getState()
-        const current = state.candles[candleKey(INSTRUMENT, interval)] ?? []
+        const current = state.candles[candleKey(instrument, interval)] ?? []
         const incoming = result.items.map((item) => barFromPayload(item.event_id, item.payload))
-        state.seedCandles(INSTRUMENT, interval, [...current, ...incoming])
+        state.seedCandles(instrument, interval, [...current, ...incoming])
       })
       .catch(() => undefined)
-  }, [display, interval, key])
+  }, [display, instrument, interval, key])
 
   useEffect(() => {
     if (containerRef.current === null) return
@@ -184,7 +186,7 @@ export function MarketChartPanel() {
   }, [bars, interval])
 
   const markers = useMemo(
-    () => buildTradeMarkers(executions, INSTRUMENT, interval),
+    () => buildTradeMarkers(executions, instrument, interval),
     [executions, interval],
   )
   useEffect(() => {
@@ -208,12 +210,12 @@ export function MarketChartPanel() {
     const earliest = bars[0].openTsMs
     setLoading(true)
     try {
-      const result = await rest.candleHistory(INSTRUMENT, interval, {
+      const result = await rest.candleHistory(instrument, interval, {
         limit: 200,
         before: earliest,
       })
       const page = result.items.map((item) => barFromPayload(item.event_id, item.payload))
-      useMarketStore.getState().seedCandles(INSTRUMENT, interval, [...bars, ...page])
+      useMarketStore.getState().seedCandles(instrument, interval, [...bars, ...page])
       setHasEarlier(result.items.length > 0)
     } catch {
       setHasEarlier(false)
@@ -230,8 +232,8 @@ export function MarketChartPanel() {
       {/* Market Header (docs/12 §8) — fields without backend support show —. */}
       <div className="flex h-16 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-3">
         <div>
-          <span className="text-base font-semibold text-ink">BTC/USDT</span>
-          <span className="ml-2 text-xs text-ink-muted">OKX · SPOT</span>
+          <span className="text-base font-semibold text-ink">{base}/{quote}</span>
+          <span className="ml-2 text-xs text-ink-muted">{exchange.toUpperCase()} · {marketType}</span>
         </div>
         <span className="numeric text-2xl font-semibold text-ink">
           {ticker?.ticker.last ?? '—'}

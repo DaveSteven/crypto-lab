@@ -5,6 +5,7 @@ import { connectionDisplay, useConnectionStore } from './connectionStore'
 import { EnvironmentGate } from './EnvironmentGate'
 import { useSessionStore } from './sessionStore'
 import { useMarketStore } from '@/features/market/marketStore'
+import { useInstrumentStore } from '@/features/market/instrumentStore'
 
 const STATUS_LABEL: Record<string, string> = {
   idle: '未连接',
@@ -40,7 +41,8 @@ function ConnectionBadge() {
 
 export function AppLayout() {
   const clearSession = useSessionStore((state) => state.clearSession)
-  const quality = useMarketStore((state) => state.quality['okx:SPOT:BTC/USDT'])
+  const instrumentId = useInstrumentStore((state) => state.instrumentId)
+  const quality = useMarketStore((state) => state.quality[instrumentId])
   const lastEventTsMs = useConnectionStore((state) => state.lastEventTsMs)
   const status = useConnectionStore((state) => state.status)
 

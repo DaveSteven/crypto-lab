@@ -12,6 +12,7 @@ import {
   type OrderFormValues,
 } from './orderForm'
 import { useTradingStore } from './tradingStore'
+import { splitInstrument, useInstrument } from '@/features/market/instrumentStore'
 import {
   ALLOCATION_PERCENTS,
   REFERENCE_FEE_RATE,
@@ -21,10 +22,8 @@ import {
 } from './orderPreview'
 import { Button, Dialog, Input, Label, Select, TermTip } from '@/shared/ui'
 
-const INSTRUMENT = 'okx:SPOT:BTC/USDT'
-
 const EMPTY_FORM: OrderFormValues = {
-  instrument_id: INSTRUMENT,
+  instrument_id: '',
   side: 'BUY',
   order_type: 'MARKET',
   quantity: '',
@@ -37,12 +36,13 @@ const EMPTY_FORM: OrderFormValues = {
 /** Order Entry (docs/12 §11): order intent only, confirmation dialog and
  * allocation shortcuts arrive with Task 1.12.8. */
 export function OrderEntryPanel() {
+  const { instrumentId: INSTRUMENT, base: baseAsset, quote: quoteAsset } = useInstrument()
   const session = useSessionStore((state) => state.session)
   const quality = useMarketStore((state) => state.quality[INSTRUMENT])
   const status = useConnectionStore((state) => state.status)
   const display = connectionDisplay(status)
 
-  const [values, setValues] = useState<OrderFormValues>(EMPTY_FORM)
+  const [values, setValues] = useState<OrderFormValues>({ ...EMPTY_FORM, instrument_id: INSTRUMENT })
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -50,8 +50,8 @@ export function OrderEntryPanel() {
   const balances = useTradingStore((state) => state.balances)
   const ticker = useMarketStore((state) => state.tickers[INSTRUMENT])
   const quote = { bid: ticker?.ticker.bid, ask: ticker?.ticker.ask }
-  const availableQuote = balances.find((item) => item.asset === 'USDT')?.available ?? '0'
-  const availableBase = balances.find((item) => item.asset === 'BTC')?.available ?? '0'
+  const availableQuote = balances.find((item) => item.asset === quoteAsset)?.available ?? '0'
+  const availableBase = balances.find((item) => item.asset === baseAsset)?.available ?? '0'
   const allocationUnavailable = values.side === 'BUY' && values.order_type === 'MARKET' && !quote.ask
 
   const marketOk = (quality?.status ?? 'VALID') === 'VALID'
@@ -111,6 +111,7 @@ export function OrderEntryPanel() {
       )
       setValues({
         ...EMPTY_FORM,
+        instrument_id: submitted.instrument_id,
         side: submitted.side,
         order_type: submitted.order_type,
         latency_preset: submitted.latency_preset,
@@ -183,12 +184,12 @@ export function OrderEntryPanel() {
         <p className="numeric flex justify-between text-[11px] text-ink-muted" data-testid="available-balance">
           <span>可用余额</span>
           <span>
-            {values.side === 'BUY' ? `${availableQuote} USDT` : `${availableBase} BTC`}
+            {values.side === 'BUY' ? `${availableQuote} ${quoteAsset}` : `${availableBase} ${baseAsset}`}
           </span>
         </p>
 
         <Label>
-          数量（BTC）
+          数量（{baseAsset}）
           <Input
             className="mt-1 numeric"
             value={values.quantity}
@@ -218,7 +219,7 @@ export function OrderEntryPanel() {
 
         {values.order_type === 'LIMIT' && (
           <Label>
-            限价（USDT）
+            限价（{quoteAsset}）
             <Input
               className="mt-1 numeric"
               value={values.limit_price ?? ''}
@@ -230,7 +231,7 @@ export function OrderEntryPanel() {
 
         {values.order_type === 'MARKET' && values.side === 'BUY' && (
           <Label>
-            最大报价预算（USDT，含手续费）
+            最大报价预算（{quoteAsset}，含手续费）
             <Input
               className="mt-1 numeric"
               value={values.max_quote_budget ?? ''}
@@ -346,23 +347,25 @@ function ConfirmBody({
   session: { environmentId: string; accountId: string }
 }) {
   const preview = buildOrderPreview(values, quote)
+  const { exchange, marketType, base, quote: quoteAsset, symbol } = splitInstrument(values.instrument_id)
+  const instrumentLabel = `${exchange.toUpperCase()} · ${symbol} · ${marketType === 'SPOT' ? '现货' : marketType}`
   return (
     <div>
       <dl>
         <Line label="环境" value={`${session.environmentId.slice(0, 16)}…（模拟）`} />
         <Line label="账户" value={`${session.accountId.slice(0, 16)}…`} />
-        <Line label="品种" value="OKX · BTC/USDT · 现货" />
+        <Line label="品种" value={`${instrumentLabel}`} />
         <Line label="方向 / 类型" value={`${values.side === 'BUY' ? '买入' : '卖出'} · ${values.order_type === 'MARKET' ? '市价' : '限价 GTC'}`} />
-        <Line label="数量" value={`${values.quantity} BTC`} />
+        <Line label="数量" value={`${values.quantity} ${base}`} />
         <Line
           label={preview.referenceLabel || '参考价'}
-          value={preview.referencePrice === null ? '--（行情缺失）' : `${preview.referencePrice} USDT`}
+          value={preview.referencePrice === null ? '--（行情缺失）' : `${preview.referencePrice} ${quoteAsset}`}
         />
         {values.max_quote_budget !== undefined && (
-          <Line label="最大资金预算（含手续费）" value={`${values.max_quote_budget} USDT`} />
+          <Line label="最大资金预算（含手续费）" value={`${values.max_quote_budget} ${quoteAsset}`} />
         )}
-        <Line label="预估成交金额" value={preview.estimatedNotional === null ? '--' : `${preview.estimatedNotional} USDT`} />
-        <Line label="预估手续费" value={preview.estimatedFee === null ? '--' : `${preview.estimatedFee} USDT`} />
+        <Line label="预估成交金额" value={preview.estimatedNotional === null ? '--' : `${preview.estimatedNotional} ${quoteAsset}`} />
+        <Line label="预估手续费" value={preview.estimatedFee === null ? '--' : `${preview.estimatedFee} ${quoteAsset}`} />
         <Line
           label="模拟执行延迟"
           value={preview.latencyMs === null ? values.latency_preset : `${values.latency_preset}（${preview.latencyMs} ms）`}
