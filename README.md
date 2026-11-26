@@ -11,6 +11,15 @@ Crypto Lab 是一个基于真实虚拟货币市场数据、使用虚拟资金进
 
 本机可能安装了其他 Python 版本，请显式使用 `python3.12`。
 
+数据库迁移使用 Alembic。通过环境变量提供 PostgreSQL URL，禁止将真实凭据写入仓库：
+
+```bash
+export CRYPTO_LAB_DATABASE_URL='postgresql+psycopg://user:password@127.0.0.1:5432/crypto_lab'
+.venv/bin/alembic upgrade head
+```
+
+PostgreSQL 集成测试仅在提供 `CRYPTO_LAB_TEST_DATABASE_URL` 时运行；未配置时自动跳过，不使用 SQLite 替代 PostgreSQL 验收。
+
 ## 本地初始化
 
 ```bash

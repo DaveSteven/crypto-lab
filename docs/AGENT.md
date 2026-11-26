@@ -49,6 +49,7 @@ Phase 1 仅可在已确认范围内开发基础模拟交易功能，不得借此
 | docs/03-EXCHANGE-API-RESEARCH.md | 交易所 API 调查及验证记录 |
 | docs/04-PHASE-0-REPORT.md | 技术验证及实验结果 |
 | docs/06-PHASE-1-PLAN.md | Phase 1 开发范围及验收标准 |
+| docs/08-PERSISTENCE-DESIGN.md | PostgreSQL Schema、事务边界及恢复设计 |
 | docs/decisions/ | 架构决策记录 |
 | README.md | 项目运行及使用说明 |
 

@@ -4,7 +4,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.5 |
+| 文档版本 | V0.6 |
 | 当前阶段 | Phase 1 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
@@ -30,7 +30,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.6 | 限价单实时自动撮合 | Completed |
 | 1.7 | 模拟执行延迟 | Completed |
 | 1.8 | 交易引擎集成与一致性验证 | Completed |
-| 1.9 | 数据持久化 | Pending |
+| 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Pending |
 | 1.11 | 实时行情服务 | Pending |
 | 1.12 | React 前端应用 | Pending |
@@ -124,10 +124,12 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ### Task 1.9 — 数据持久化
 
-- [ ] 设计 PostgreSQL Schema 与 Alembic 迁移。
-- [ ] 持久化账户、流水、订单、成交及必要行情引用。
-- [ ] 将领域原子边界映射为数据库事务。
-- [ ] 验证余额、持仓及待执行订单的恢复与重建。
+- [x] 设计 PostgreSQL Schema 与 Alembic 初始迁移。
+- [x] 持久化账户、流水、订单、成交、投影及必要行情引用。
+- [x] 将领域原子边界映射为环境根行锁保护的数据库事务。
+- [x] 持久化并恢复待执行订单、类型化事件、去重登记、ID Counter 和模拟流动性。
+- [x] 验证余额、持仓及待执行状态的恢复与重建。
+- [x] 使用真实 PostgreSQL 验证迁移 upgrade/downgrade、事务回滚及约束。
 
 ### Task 1.10 — 后端服务与 REST API
 

@@ -4,12 +4,12 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 对应任务 | Phase 1 Task 1.9 |
-| 状态 | Accepted / Implementation Active |
+| 状态 | Implemented / Task 1.9 Completed |
 | 数据库 | PostgreSQL |
 
-本文档只提出持久化架构，不表示数据库依赖、Schema 或迁移已经实现。确认前不得改变现有领域金融规则。
+本文档记录已确认并实现的持久化架构，不改变现有领域金融规则。
 
 ## 1. 目标与边界
 
@@ -225,4 +225,17 @@ Fill History 的同步可重建投影：
 6. 模拟流动性剩余档位 Phase 1 使用 Decimal 字符串 JSONB，不建立高频逐档表。
 7. Simulation Event 持久化类型化 payload，由 Dispatcher 重建 Handler，不持久化 Callable。
 8. 测试使用真实 PostgreSQL；本机可通过临时 Docker 容器执行。
+
+以上事项已由项目负责人于 2026-11-26 全部确认并实施。
+
+## 9. 实施结果
+
+- 已新增 SQLAlchemy 2、psycopg 3 和 Alembic 依赖。
+- 已建立 13 张事务参与表及初始 Alembic Migration。
+- 已实现 PostgreSQL 环境根行锁事务、Repository 和恢复 Adapter。
+- Ledger 与 Execution 使用显式持久化序列，避免相同毫秒内按随机 ID 错误重排。
+- 已实现账户、流水、余额、订单、Execution、Portfolio、Scheduler、事件队列、去重登记、ID Counter 和模拟流动性的持久化/恢复。
+- 写入前拒绝超出 `NUMERIC(50,24)` 的 Decimal，不允许数据库静默舍入。
+- Python Callable 不入库；持久化事件仅保存类型和 JSON Payload，由后续应用层 Dispatcher 恢复处理逻辑。
+- 真实 PostgreSQL 已验证初始 Migration upgrade/downgrade、事务回滚、重复事件、投影重建及恢复一致性。
 
