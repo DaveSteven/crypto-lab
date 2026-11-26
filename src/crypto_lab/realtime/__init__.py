@@ -9,6 +9,7 @@ from crypto_lab.realtime.hub import (
     SlowConsumer,
     Subscription,
 )
+from crypto_lab.realtime.protocol import parse_client_message
 
 __all__ = [
     "EnvironmentEventHub",
@@ -18,4 +19,5 @@ __all__ = [
     "ReplayUnavailable",
     "SlowConsumer",
     "Subscription",
+    "parse_client_message",
 ]
