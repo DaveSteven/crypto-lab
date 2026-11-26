@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.4 Completed） |
+| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.5 Completed） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -197,9 +197,10 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 #### Task 1.12.5 — Market 行情页面
 
-- [ ] Lightweight Charts K 线（REST 历史 + WS 实时合并、闭合保护）。
-- [ ] 历史分页与断线缺口补齐。
-- [ ] 行情质量状态展示与下单闸门联动（依赖差距 G1 的后端多周期支持）。
+- [x] Lightweight Charts K 线（REST 历史 + WS 实时合并、闭合保护、增量 update）。
+- [x] 历史分页（before 游标）与断线缺口补齐（resync 后以 after 拉取缺失区间）。
+- [x] 行情质量状态展示与下单闸门联动（非 VALID / 离线时提示暂停交易）；来源与数据时间标注。
+- [x] 真实联调冒烟：经 Vite 代理创建环境/账户，WS 收到 54 条真实 OKX 双周期 K 线，delivery_sequence 连续。前端 44 项测试通过。
 
 #### Task 1.12.6 — 模拟交易与账户页面
 
