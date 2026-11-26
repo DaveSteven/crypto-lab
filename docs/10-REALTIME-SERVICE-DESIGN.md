@@ -142,24 +142,37 @@ Phase 1 不承诺进程重启后的 WebSocket Event Replay。每个 Environment 
 ## 9. 组件设计
 
 ```text
-Canonical Market / Committed Trading Event
+OKX Public/Business WebSocket (multi-endpoint, one logical feed per process)
                     ↓
-            RealtimePublisher
-                    ↓
-       Environment Event Hub (bounded)
-                    ↓
-       Subscription Filter / Coalescing
-                    ↓
-          Per-connection Send Queue
-                    ↓
-             FastAPI WebSocket
+    OkxMarketFeed (subscribe/keepalive/reconnect/quality)
+        ↓                     ↓
+Canonical Events      OrderBookView
+        ↓                     ↓
+EnvironmentMarketDispatcher   MarketRealtimeBridge (fan-out broadcast)
+  (per-env DB transactions)         ↓
+  Trade→TRADE_THROUGH       Environment Event Hub (bounded)
+  Book→Liquidity 同步              ↓
+  Due→Scheduler            Subscription Filter / Coalescing
+        ↓                         ↓
+Committed Trading Events    Per-connection Send Queue
+  (RealtimePublisher)             ↓
+                            FastAPI WebSocket
 ```
 
+- `OkxMarketFeed`：按 OKX 实际协议管理上游连接（candle\* 频道在 Business 端点，其余在公共端点）、应用层 ping/pong、订单簿序列缺口重订阅、有界退避重连、stale/quality 状态发布；验证通过的 Canonical 事件经回调分发给交易引擎。
+- `EnvironmentMarketDispatcher`：每个注册环境在独立数据库事务中应用行情（ADR 0007）：Trade 驱动 TRADE_THROUGH 撮合，订单簿驱动模拟流动性同步，到期订单由 Execution Scheduler 处理；每笔 Trade 经 `processed_market_events` 去重并保存排序键。
+- 调度驱动任务：固定间隔（默认 200ms）运行各环境到期订单，不依赖新行情到达触发。
 - `RealtimePublisher`：同步业务代码可调用的提交后发布接口。
 - `EnvironmentEventHub`：环境隔离、序列、Ring Buffer 和连接登记。
 - `RealtimeConnection`：订阅、队列、合并、心跳及统计。
 - FastAPI Endpoint：协议解析、关闭码和连接生命周期；不包含交易计算。
 - 单进程内通过 async-safe 调度将同步事务提交后的事件转交给 Hub，不阻塞数据库事务。
+
+### 9.1 实施状态（2026-11-26）
+
+- Verified：OKX 公共端点 tickers/trades/books 订阅、Business 端点 candle1m 订阅、订单簿快照/增量合并、15 秒真实接口验证（276 条消息，0 订阅错误，0 重连），报告见 `data/okx_realtime_feed_verification.json`。
+- Verified：本地系统代理 WSS CONNECT 失败，Feed 默认绕过系统代理直连。
+- Documented：OKX 8443 端口退役公告（连接实测同时收到 64010 notice）。
 
 ## 10. 错误及关闭码
 

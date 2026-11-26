@@ -32,7 +32,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.8 | 交易引擎集成与一致性验证 | Completed |
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
-| 1.11 | 实时行情服务 | Pending |
+| 1.11 | 实时行情服务 | Completed |
 | 1.12 | React 前端应用 | Pending |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
@@ -141,10 +141,18 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 ### Task 1.11 — 实时行情服务
 
-- [ ] 定义面向前端的 WebSocket 协议。
-- [ ] 推送 Ticker、K 线、订单簿、数据质量及模拟订单状态。
-- [ ] 处理连接、心跳、断线、重连及过期行情。
-- [ ] 限制队列和内存增长，记录丢弃及断连事件。
+- [x] 定义面向前端的 WebSocket 协议。
+- [x] 推送 Ticker、K 线、订单簿、数据质量及模拟订单状态。
+- [x] 处理连接、心跳、断线、重连及过期行情。
+- [x] 限制队列和内存增长，记录丢弃及断连事件。
+
+实施补充（2026-11-26，ADR 0007）：
+
+- 共享 OkxMarketFeed 由 Lifespan 管理，一进程一逻辑 Feed；candle 频道走 OKX Business 端点。
+- EnvironmentMarketDispatcher 将 Canonical 行情按环境串行写入交易引擎（TRADE_THROUGH 撮合、流动性同步、到期订单执行），环境间完全隔离。
+- 新环境注册时注入当前有效市场快照；订单簿失效期间到期订单按 MARKET_DATA_UNAVAILABLE 拒绝，不使用旧报价撮合。
+- 配置经 CRYPTO_LAB_FEED_* 环境变量管理；自动化测试显式禁用或注入可控连接。
+- 完成 15 秒 OKX 公共 WebSocket 真实接口验证（0 订阅错误、0 重连），报告见 data/okx_realtime_feed_verification.json。
 
 ### Task 1.12 — React 前端应用
 
