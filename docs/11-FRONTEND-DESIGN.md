@@ -4,204 +4,173 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
-| 对应任务 | Phase 1 Task 1.12.1 |
-| 状态 | Proposed（待项目负责人确认 UI/交互后进入 1.12.2） |
-| 上游契约 | docs/09-REST-API-DESIGN.md、docs/10-REALTIME-SERVICE-DESIGN.md |
+| 文档版本 | V0.2 |
+| 对应任务 | Phase 1 Task 1.12（Gate A 交付） |
+| 状态 | Accepted（架构基线）/ 部分 Proposed（见 §10 差距） |
+| 上游契约 | docs/09-REST-API-DESIGN.md、docs/10-REALTIME-SERVICE-DESIGN.md、ADR 0006/0007/0008 |
+| 视觉与交互规范 | docs/12-UI-UX-DESIGN.md V1.1（Accepted） |
+
+修订记录：
+
+- V0.1（2026-11-26）：初始架构与接口调查（Task 1.12.1 旧划分）。
+- V0.2（2026-11-26）：按已确认 UI/UX 规范 V1.1 与 Task 1.12 新划分全面修订——Desktop Only、Feature-based Architecture、API Capability Matrix、现状对照与剩余差距（含 ADR 0008 Proposed）。
 
 ## 1. 目标与边界
 
-为 Phase 1 模拟交易系统定义本地 React 前端的技术架构、状态同步设计、接口清单与需求差距分析。
+为 Phase 1 模拟交易系统定义前端技术架构、状态同步设计、接口能力矩阵与差距分析。
 
-本阶段不含 UI 布局、视觉风格、页面结构与交互设计（由项目负责人另行确认），不实现真实交易、认证、公网部署或核心金融计算——所有成交价格、手续费、成交结果均来自服务端，前端只提交订单意图。
+Desktop Only：仅支持桌面浏览器（最小视口 1280px），不实现移动端/平板布局。UI 布局、视觉与交互的权威来源是 docs/12；本文档不重复其内容。
 
-## 2. 技术选型（候选，工程初始化时锁定版本）
+前端只提交订单意图；成交价格、手续费与结果由服务端决定。不实现认证、公网部署或任何核心金融计算。
 
-| 用途 | 候选 | 说明 |
+## 2. 技术选型（已安装版本为当前基线）
+
+| 用途 | 选型 | 当前版本 |
 |---|---|---|
-| 包管理 | pnpm | 工程初始化时确认本机版本 |
-| 框架 | React + TypeScript | |
-| 构建 | Vite | dev server 代理到 `127.0.0.1:8642`（后端默认端口，`VITE_API_ORIGIN` 可覆盖），规避 CORS |
-| 样式 | Tailwind CSS + shadcn/ui | |
-| 服务端状态 | TanStack Query | REST 快照、列表、轮询兜底 |
-| 客户端状态 | Zustand | 行情流、WS 连接状态、环境/账户会话 |
-| 路由 | React Router | |
-| 图表 | TradingView Lightweight Charts | 仅展示，不做计算 |
-| 图标 | Lucide React | |
-| 校验 | Zod | 所有外部输入（REST/WS 消息）运行时校验 |
-| 数值 | decimal.js | 仅展示层换算；禁止 float 参与资金展示计算 |
-| 实时通道 | 原生 WebSocket（`crypto-lab.v1` 子协议） | 不引入 socket.io 等封装 |
-| 单测 | Vitest + React Testing Library | |
-| E2E | Playwright | 仅针对本地真实后端，不访问交易所网络 |
+| 包管理 | pnpm | 12.23 |
+| 框架 | React + TypeScript | React 19.3 / TS 7.0 |
+| 构建 | Vite | 8.3 |
+| 样式 | Tailwind CSS | 4.3 |
+| UI 组件 | shadcn/ui（基座已备：别名、cn、CSS 变量） | 随组件按需引入 |
+| 图标 | Lucide React | 待 1.12.3（新划分）引入 |
+| 服务端状态 | TanStack Query | 5.x |
+| 客户端状态 | Zustand | 5.x |
+| 路由 | React Router | 7.18 |
+| 图表 | TradingView Lightweight Charts | 5.3 |
+| 校验 | Zod | 5.x |
+| 数值 | decimal.js | 4.x |
+| 面板布局 | react-resizable-panels | 待 1.12.7 引入 |
+| 实时通道 | 原生 WebSocket（crypto-lab.v1） | — |
+| 单测 | Vitest + Testing Library | 5.1 |
+| E2E | Playwright（Chromium） | 1.65 |
 
-依赖分批引入：1.12.2 只装工程基座（构建/样式/路由/测试），其余随对应子任务引入。不一次性安装全部依赖。
+不引入功能重叠依赖；不提前安装后续阶段才需要的库。
 
-## 3. 应用架构
+## 3. 应用架构（Feature-based）
 
-```text
-页面 / 路由（React Router）
-    ↓
-特性层（market / trading / account / orders / executions）
-    ↓                ↓
-TanStack Query    Zustand Store（实时流状态）
-    ↓                ↓
-REST Client       WS Client（单连接、协议状态机）
-    └───────┬────────┘
-      Zod Schema（契约唯一来源，对应 OpenAPI + docs/10 消息信封）
-```
-
-原则：
-
-- REST 是权威快照来源，WebSocket 只是通知通道（docs/10 §6）；任何怀疑状态不一致时以 REST Resync 收场。
-- 契约类型全部由 Zod Schema 推导（`z.infer`），不手写第二份 interface。
-- 展示层不得实现核心金融计算；收益率、滑点等仅做只读展示换算（decimal.js），以服务端字段为准。
-
-## 4. REST 与 WebSocket 状态同步
-
-### 4.1 交易状态一致性流程（docs/10 §8.1 的客户端实现）
+目标目录结构（docs/12 Instruction §5）：
 
 ```text
-1. 建立 WS → session.ready（取得 stream_id）
-2. subscribe({ topics, resume_from? }) → 缓冲交易事件，不直接应用
-3. GET /snapshot?account_id=... → 权威快照 + state_version V
-4. 丢弃缓冲中 state_version <= V 的事件
-5. 按 (state_version, event_index) 升序应用剩余事件
-6. 之后到达的交易事件实时应用；order_id 幂等去重（稳定 event_id）
+frontend/src/
+├── app/            # 组合根：路由、Provider、Gateway 装配
+├── pages/          # 路由页面（Trading / Overview / Markets / Settings）
+├── features/       # 按领域组织：market / trading / account / workspace
+│   └── <feature>/  # api.ts + store.ts + components/ + schema.ts
+├── entities/       # 跨领域实体类型（canonical schemas）
+└── shared/         # ui 基础组件、lib（format、decimal）、api 客户端核心
 ```
 
-- `stream_id` 变化（进程重启）→ 强制完整 Resync（WS 重连 + REST 快照）。
-- `delivery_sequence` 出现缺口（交易事件）→ `resync.required` 同等处理：全量 REST 重建。
-- `stream_sequence` 缺口是订阅过滤/合并的正常现象，**不得**触发 Resync。
-- 收到 `resync.required` 或重连完成后，必须重新走 4.1 流程。
+现状对照：当前代码为 `api/`（REST/WS/Sync 客户端，已稳定）、`state/`（stores）、`market/`、`pages/`、`realtime/`、`trading/`、`bootstrap/`。Task 1.12.3（新划分，Design System & App Shell）实施时迁移至上述 Feature 结构；迁移为机械性移动 + 路径更新，客户端层公共接口保持不变。
 
-### 4.2 WS 连接状态机
+架构原则（与 V0.1 一致，继续有效）：
 
-```text
-connecting → ready(session.ready) → subscribed
-   ↑              ↑ resync.required / 协议错误
-   └── backoff ←──┘ （指数退避，上限 30s；重连携带 resume_from{stream_id, stream_sequence}）
-```
+- REST 是权威快照来源，WebSocket 是通知通道；状态不一致以 REST Resync 收场。
+- 契约类型全部由 Zod Schema 推导，不手写第二份 interface。
+- 展示层不做核心金融计算；decimal.js 只做输入/展示换算，图表仅在展示边界转 Number。
+- 单例 Gateway：每标签页一条 WS 连接绑定活动环境（ADR 0006/0007）。
 
-- 心跳：服务端 15s `heartbeat` → 客户端立即回 `pong` 并回显 heartbeat ID；45s 静默会被服务端关闭。
-- 连接状态（connecting/online/resync/offline）是全局 UI 状态（Zustand），页面据此展示数据新鲜度。
+## 4. REST / WebSocket 状态同步
 
-### 4.3 行情与交易的不同可靠性
+V0.1 §4 的设计继续有效并已实现（`api/sync.ts`）：
 
-| 事件类 | 合并性 | 缺口处理 |
+1. WS 连接 → session.ready → 订阅（自动 resume_from 游标）。
+2. 交易事件先缓冲；REST Snapshot（state_version V）到达后丢弃 `<= V` 的缓冲事件。
+3. 按 `(state_version, event_index)` 排序应用，event_id 去重。
+4. 之后实时应用；`delivery_sequence` 缺口或 `stream_id` 变更 → 全量 Resync；`stream_sequence` 缺口正常不处理。
+
+补充（docs/12 §18 三态模型映射）：
+
+- Connection State → 连接徽标（connecting/online/resync/offline 已实现）。
+- Market Data State → quality 徽标 + 下单闸门（已实现）。
+- Account Sync State → LOADING/SYNCED/RESYNCING/ERROR 待 1.12.9（新划分）在 Activity Panel 呈现。
+
+环境切换（docs/12 §17.5）：Gateway 按 `env:account` 键重建连接并重置 trading/market store（已实现幂等 start）；TanStack Query 缓存按环境 key 前缀隔离（1.12.11 实施时落地）。
+
+## 5. Candle 同步（实现状态）
+
+已实现（`market/candles.ts` + `pages/MarketPage`）：
+
+- 复合键 `(instrument, interval, open_ts)` 合并；已闭合 K 线不被未闭合覆盖；REST 页面对其时间戳权威；升序、5000 根上限。
+- REST 历史 seed + WS upsert；分页 `before` 游标；resync 后 `after` 拉取缺口。
+
+待实现（新划分 1.12.6 收尾）：
+
+- 初始化竞争处理：历史请求与实时消息竞态（当前以 seedCandles 合并缓解，需加请求代次标记隔离迟到响应）。
+- Volume 副图、Last Price Line、成交标记（§9.6）。
+- 缺失区间无法补齐时的显式"数据缺失"标记。
+- 多周期实时订阅（ADR 0008，后端前置）。
+
+## 6. API Capability Matrix
+
+以实际源码与契约为准（2026-11-26）。S=Supported / P=Partially Supported / N=Not Supported。
+
+| Feature | Endpoint / Topic | Status | Gap | Required Change |
+|---|---|---|---|---|
+| Environment List | GET /api/v1/environments | N | 无列表端点 | 可选新增（现用本地会话持久化） |
+| Environment Creation | POST /environments | S | — | — |
+| Environment Switching | 本地会话 + Gateway | S | Query 缓存隔离未落地 | 1.12.11 前端实现 |
+| Account List | GET /accounts | S | — | — |
+| Account Default Latency | — | N | 后端无账户级默认延迟字段；仅订单级 latency_preset | 最小扩展：paper_accounts 增加 default_latency 列 + 创建/更新参数；或 Phase 1 前端记住上次选择（本地偏好） |
+| Account Snapshot | GET /accounts/{id} | S | — | — |
+| Full Snapshot | GET /snapshot | S | — | — |
+| Balances | GET + WS `balances` | S | — | — |
+| Positions | GET + WS `positions` | P | 无当前估值价格/市值（§12.5） | 前端以 ticker × quantity 显示参考估值并明确标注；或后端后续提供估值端点 |
+| Orders | GET + WS `orders` | S | 游标分页未实现（limit ≤ 200） | 按 docs/09 当前限制记录 |
+| Order Submission | POST /orders | S | 订单预估不存在（见 Order Preview） | — |
+| Order Cancellation | POST /orders/{id}/cancel | S | — | — |
+| Executions | GET + WS `executions` | S | Maker/Taker 标记未入库 | 后端执行记录补 taker/maker 字段（Task 1.12 前后端对齐时评估） |
+| Execution Details | GET /executions/{id} | S | 滑点分析字段未持久化 | Execution Detail Drawer 仅展示已存在字段（§14.2 "后端数据支持的情况下"） |
+| Market Rules | — | N | 无 REST 端点 | 前端静态配置（OKX:DOCUMENTED:SPOT:V1 同源），标注 Documented |
+| Ticker | WS `market.ticker` | S | 无 REST 快照端点 | 首屏空窗可接受；可选增强 GET /market/ticker |
+| Order Book | WS `market.order_book` | S | 无 depth 订阅过滤（推送合并后全量） | 前端切片 top-N |
+| Market Trades | WS `market.trade` | S | 有界列表前端实现 | — |
+| Market Quality | WS `market.quality` | S | — | — |
+| Historical Candles | GET /market/candles | S | — | — |
+| Realtime Candles | WS `market.candle` | P | 仅常驻周期实时推送 | ADR 0008（Proposed） |
+| Multi-interval Subscription | — | P | 静态周期列表，非动态引用计数 | ADR 0008 实施 |
+| Order Preview | — | N | 无后端预估 API | 预估手续费 = 数量×限价/参考价×费率（本地参考估算，明确标注）；预估成交金额同法；VWAP/Slippage 不展示 |
+| state_version | Snapshot + WS 事件 | S | — | — |
+| Replay | resume_from | S | — | — |
+| REST Resync | snapshot + sync 层 | S | — | — |
+
+## 7. Backend Gap Handling（Instruction §7 对应）
+
+1. **Candle 多周期**：ADR 0008（Proposed）。实施前过渡策略：`CRYPTO_LAB_FEED_CANDLE_INTERVALS=1m,5m,15m,1h,4h,1d` 全量常驻（本地带宽可接受），六周期即具备实时能力；ADR 0008 作为带宽优化后续实施。
+2. **Account Default Latency**：后端无此字段。最小扩展建议：`paper_accounts.default_latency_preset` 可空列 + 设置页更新端点；Phase 1 允许前端以"上次使用"本地偏好替代并明确标注。需负责人确认采用哪种。
+3. **Order Preview**：无后端预估。确认 Dialog 展示本地参考估算（费率 × 名义额），标注"本地参考估算，非实际撮合结果"；VWAP/Slippage 不展示（docs/12 §11.4 允许）。
+4. **Overview 估值**：持仓估值 = ticker.last/中间价 × 数量，标注估值币种 USDT 与数据时间；无历史快照前不实现收益曲线；无法估值的资产明确列出。
+5. **Executions Maker/Taker**：后端执行记录无该字段 → Drawer 不展示该行（"后端数据支持的情况下"），或后端补充字段（建议后续 Task 评估）。
+
+## 8. 金融精度
+
+API Decimal 字符串保留精度；Zod 校验响应结构；decimal.js 承担输入换算（如 25%/50% 快捷计算须以 Decimal 实现）；图表边界才转 Number；原始字符串不被覆盖；数量遵循静态 Market Rules 配置。
+
+## 9. Testing Strategy
+
+- **Unit（Vitest）**：Decimal 处理、表单校验、状态映射、Candle 合并、序列处理、事件去重、布局配置持久化——已覆盖核心部分，随新模块补充。
+- **Component（RTL）**：Order Entry / Preview / 状态 / 取消 / 连接状态 / 质量 / Empty-Error / Term Tooltip——已有基础，按 docs/12 补充确认 Dialog 与 Tooltip。
+- **Integration**：REST Snapshot + WS 更新（已实现层测试）、Reconnect/Replay/Resync/State Version（已覆盖）、Environment Switching、周期切换、分页、重复/迟到事件（1.12.6 补充）。
+- **E2E（Playwright）**：真实后端 + 独立测试库 + 关闭 Feed；已覆盖引导/下单意图/订单表/账户/会话恢复；补充确认流程、成交与余额变化、行情失效禁用、布局持久化。**运行须知：本机系统代理会拦截 Playwright 的就绪探测，须以 `env -u HTTP_PROXY -u HTTPS_PROXY` 运行**（已验证）。
+- **桌面验收矩阵**：1280×720 / 1440×900 / 1920×1080 / 2560×1440（docs/12 §21.1）；不要求移动端 E2E。
+
+## 10. 差距清单（现行有效）
+
+| 编号 | 内容 | 状态 |
 |---|---|---|
-| market.ticker / market.order_book / 未闭合 candle | 可合并（保留最新） | 缺口无需处理，等下一条 |
-| market.trade / market.candle(闭合) / market.quality | 不可静默丢弃 | stream 缺口正常；按 event_id 去重 |
-| orders / balances / executions / positions | 不可静默丢弃 | delivery_sequence 缺口 → Resync |
+| G1 | 多周期推送 | 已解决（静态列表）；动态订阅 → ADR 0008 Proposed |
+| G2/G3 | executions/positions 推送 | 已解决 |
+| G4 | 订单簿 depth 过滤 | 前端切片（可接受） |
+| G5 | 环境列表端点 | 本地会话替代；可选增强 |
+| G6 | instrument 元数据端点 | 前端静态配置（Documented） |
+| G7 | 行情快照端点 | 可选增强 |
+| G8 | 游标分页 | 按 docs/09 限制记录 |
+| G9 | 账户默认延迟字段 | 最小扩展方案待负责人确认（§7.2） |
+| G10 | 订单预估 API | 本地参考估算替代（§7.3） |
+| G11 | 执行记录 Maker/Taker 字段 | Drawer 暂不展示；后续评估 |
 
-## 5. 数据类型与 Decimal
+## 11. 已确认事项
 
-- 所有金额、价格、数量字段以 JSON 字符串传输；Zod Schema 统一 `z.string()` + 精度/正则校验。
-- 展示换算（如百分比、市值）使用 decimal.js，从字符串构造，禁止从 float 构造。
-- 时间字段为 UTC Epoch Milliseconds；展示层转换为本地时区，来源标注为服务端时间。
-- 每个行情/订单展示必须带数据来源与时间（exchange_ts / received_ts / state_version）。
-
-## 6. 真实行情与模拟交易的区分
-
-- 全局布局固定展示"模拟交易声明"（虚拟资金、无真实订单）。
-- 行情数据标注来源（`OKX 公共行情`）、传输类型与数据时间。
-- 订单/成交/持仓页面标注手续费费率来源（`phase1-default-v1` 模拟配置）、执行延迟为**模拟配置延迟**并区分展示 scheduler lag。
-- 行情质量状态（`market.quality`）驱动行情区域的可见状态：VALID / STALE / UNSYNCED / INCOMPLETE，失效时禁止引导下单（下单按钮置为不可用并说明原因）。
-
-## 7. K 线设计
-
-- **合并**：REST 历史（`GET /api/v1/market/candles`，默认倒序）与 WS 实时（`market.candle`）以 `(interval, open_ts_ms)` 为键合并；`event_id` 内含 confirm 标记，闭合 K 线以 `is_closed=true` 为准且不可被未闭合更新覆盖。
-- **分页**：以最早 `open_ts_ms` 作为 `before` 游标向更早加载；OKX 返回行序为倒序，需在客户端按 `open_ts_ms` 升序排列。
-- **缺口补齐**：WS 断线重连后，对比本地最新 `open_ts_ms` 与服务器历史，用 REST 拉取缺失区间后再拼接。
-- **多周期动态订阅**：当前后端仅推送单一配置周期（见 §13 差距 G1）；前端按订阅过滤 `interval`，多周期推送需后端先行支持。
-
-## 8. 高频行情与 React 渲染分离
-
-- WS 消息由 WS Client 写入 Zustand store（非 React 状态）；ticker/order_book 采用"保留最新 + 定时 flush"（如 rAF 或 250ms interval）批量提交，避免每消息触发渲染。
-- 图表组件对 K 线序列使用 `series.update()` 增量更新，不整表重绘。
-- 订单/成交等交易事件即时提交渲染（低频、不可合并）。
-- 组件按 selector 订阅切片状态，避免整 store 重渲染。
-
-## 9. 模拟订单提交与取消
-
-- 表单经 Zod 校验后构造 `OrderCreate`；数量/价格以字符串传输。
-- 每次提交生成新的 UUID `Idempotency-Key`（取消同理）；请求在飞行中时禁用按钮（防重复下单），响应 201 后跳转/刷新订单列表。
-- 收到 `409 IDEMPOTENCY_KEY_REUSED`、`409 INVALID_ORDER_STATE`、`503 MARKET_DATA_UNAVAILABLE` 等按 docs/09 错误模型展示可理解原因。
-- 订单展示字段直接映射 PaperOrder：状态、数量/已成交、均价、累计手续费、`configured_latency_ms`、`actual_simulated_delay_ms`、`scheduler_lag_ms`（标注为模拟调度滞后）。
-
-## 10. 前端所需 REST API 清单
-
-Base Path `/api/v1`；除查询外均需 `Idempotency-Key`；错误信封见 docs/09 §6。
-
-| Method | Path | 前端用途 | 触发时机 |
-|---|---|---|---|
-| GET | `/health/ready` | 启动自检 | 应用加载 |
-| POST | `/environments` | 首次使用创建环境 | 引导流程 |
-| GET | `/environments/{id}` | 环境状态/版本 | 会话恢复 |
-| POST | `/environments/{id}/accounts` | 创建模拟账户 | 引导流程 |
-| GET | `/environments/{id}/accounts` | 账户选择 | 会话恢复 |
-| GET | `/environments/{id}/accounts/{account_id}` | 账户详情 | 会话恢复 |
-| GET | `/environments/{id}/accounts/{account_id}/balances` | 余额（可用/冻结） | 快照 + 订阅兜底 |
-| GET | `/environments/{id}/accounts/{account_id}/positions` | 持仓与成本 | 快照 + 订阅兜底 |
-| POST | `/environments/{id}/orders` | 提交订单意图 | 交易表单 |
-| GET | `/environments/{id}/orders` | 订单列表（limit ≤ 200，account/status 过滤） | 订单页 |
-| GET | `/environments/{id}/orders/{order_id}` | 订单详情 | 订单页 |
-| POST | `/environments/{id}/orders/{order_id}/cancel` | 取消挂单 | 订单操作 |
-| GET | `/environments/{id}/executions` | 成交列表（account/order 过滤） | 成交页 |
-| GET | `/environments/{id}/executions/{execution_id}` | 成交详情 | 成交页 |
-| GET | `/environments/{id}/snapshot?account_id=...` | 一致性快照（含 state_version） | Resync 流程 |
-| GET | `/market/candles?instrument_id&interval&limit&before&after` | K 线历史/分页/缺口补齐 | 行情页 |
-
-## 11. WebSocket Topic 清单
-
-Endpoint：`/api/v1/ws/environments/{environment_id}`，Subprotocol `crypto-lab.v1`，Origin `http://localhost:5173` 已在服务端白名单。
-
-| Topic | 订阅过滤 | payload 来源 | 前端消费 |
-|---|---|---|---|
-| `market.ticker` | instrument | OKX tickers 频道 | 行情头部报价 |
-| `market.trade` | instrument | OKX trades 频道 | 成交列表（可选） |
-| `market.order_book` | instrument（depth 过滤见差距 G4） | 有效订单簿快照 | 盘口展示 |
-| `market.candle` | instrument + interval | OKX Business 端点 candle | K 线实时更新 |
-| `market.quality` | instrument | Feed 质量/断线/stale | 行情有效性与下单闸门 |
-| `orders` | account_id | 事务提交后的订单状态 | 订单列表实时更新 |
-| `executions` | account/order | **差距 G2：服务端尚未推送** | 成交页实时更新 |
-| `balances` | account_id | Ledger 投影变化 | 余额实时更新 |
-| `positions` | account_id | **差距 G3：服务端尚未推送** | 持仓实时更新 |
-
-控制消息：`subscribe`（含 `resume_from`）、`unsubscribe`、`ping`/`pong`、服务端 `heartbeat`、`subscription.ack`、`error`、`resync.required`、`session.ready`。
-
-## 12. 测试策略
-
-- Vitest + RTL：WS Client 协议状态机（脚本化消息序列）、Zod Schema（含 Decimal 字符串、未知字段拒绝）、状态合并/Resync 逻辑、表单校验；全部离线。
-- TanStack Query 与 REST Client：以本地 mock server（Vitest handler）验证幂等键、错误信封解析。
-- Playwright：真实本地后端 + 测试数据库，覆盖下单/取消/成交/余额流程与刷新恢复；不访问交易所网络（后端 Feed 可禁用注入固定事件）。
-- 保持后端 296 项测试基线不变；前端测试纳入独立 `pnpm test`，不混合进 pytest。
-
-## 13. 后端能力与前端需求差距分析
-
-| 编号 | 差距 | 影响 | 状态 |
-|---|---|---|---|
-| G1 | WS K 线仅推送单一配置周期 | 行情页多周期切换只能 REST 轮询 | **已解决（2026-11-26）**：`CRYPTO_LAB_FEED_CANDLE_INTERVALS` 周期列表，同一 Business 连接多周期发布，前端按 interval 过滤 |
-| G2 | `executions` topic 未暂存 | 成交页无实时推送 | **已解决（2026-11-26）**：成交事务同批暂存 executions 事件（共享 state_version/event_index） |
-| G3 | `positions` topic 未暂存 | 持仓页无实时推送 | **已解决（2026-11-26）**：同批暂存 positions 事件 |
-| G4 | `Subscription` 无 depth 字段，`market.order_book` 推送全部档位（合并后单条） | 带宽可接受（合并后非高频）；前端切片 top-N 展示 | Phase 1 前端自行切片；后端 depth 过滤列为可选增强 |
-| G5 | 无 `GET /api/v1/environments` 环境列表端点 | 多环境切换需自行记录 environment_id | Phase 1 前端本地持久化当前环境 ID + 引导创建；列表端点列为可选增强 |
-| G6 | 无 instrument 元数据端点（tick size、最小数量） | 下单表单精度提示只能硬编码 | 前端静态配置（与后端 `OKX:DOCUMENTED:SPOT:V1` 同源），标注 Documented |
-| G7 | 无行情快照 REST 端点（首屏在 WS 首条消息前无报价） | 首屏短暂显示"连接中" | 可接受；可选增强 `GET /market/ticker` |
-| G8 | 游标分页（cursor）未实现，列表用 limit（≤200） | 数据量小可接受 | 按 docs/09 当前限制记录 |
-
-## 14. 安全与边界
-
-- dev 通过 Vite 代理访问 `127.0.0.1:8642`，无 CORS 暴露；不修改后端 CORS 配置（docs/09 §7）。
-- 不引入认证、不上传任何密钥；行情与账户数据仅本机。
-- 所有页面固定可见"模拟交易声明"；不得展示任何"实盘/收益保证"措辞。
-
-## 15. 待项目负责人确认事项
-
-1. UI 布局、视觉风格、页面结构与交互设计（本文档不涉及）。
-2. 差距 G1/G2/G3 的后端补充实施顺序（G1～G3 已于 2026-11-26 解决）。
-3. 工程初始化时锁定各依赖版本并记录（1.12.2 已交付）。
-
-## 16. 已确认事项
-
-1. **Phase 1 不进行容器化部署**：前后端保持本地进程运行（前端 Vite dev、后端 8642），Docker Compose 留待 Phase 1 验收后另行规划（项目负责人 2026-11-26 确认）。
-2. 后端默认端口 8642（避开常用 8000 冲突），`CRYPTO_LAB_API_PORT` / `VITE_API_ORIGIN` 可覆盖（2026-11-26）。
+1. Phase 1 不进行容器化部署（2026-11-26）。
+2. 后端默认端口 8642（2026-11-26）。
+3. Desktop Only，最小视口 1280px（2026-11-26，UI/UX V1.1）。
+4. E2E 运行须剥离系统代理环境变量（2026-11-26，已验证）。

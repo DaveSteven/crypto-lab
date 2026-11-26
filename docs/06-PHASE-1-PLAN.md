@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（1.12.1～1.12.6 Completed，剩余 1.12.7） |
+| 1.12 | React 前端应用 | In Progress（Gate A 交付，1.12.1 待验收；详见新划分清单） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -161,58 +161,91 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - Scheduler lag 已持久化区分 configured_latency 与 scheduler_lag；Candle 验收矩阵及未完成项记录见 docs/10 §13。
 - 验收修复 4 项缺陷：NUMERIC 恢复尺度溢出、平仓持仓投影残留、Dispatcher 回滚后内存缓存不一致、持仓投影缺少本次成交。
 
-### Task 1.12 — React 前端应用
+### Task 1.12 — React 前端应用（2026-11-26 重新划分）
 
-架构设计见 [`11-FRONTEND-DESIGN.md`](11-FRONTEND-DESIGN.md)；依赖分批引入，UI 布局与交互由项目负责人另行确认。
+权威规范：docs/12-UI-UX-DESIGN.md V1.1（Accepted，含 Desktop Only 修订）；架构：docs/11 V0.2；多周期订阅：ADR 0008（Proposed）。
 
-#### Task 1.12.1 — 前端架构设计与接口调查
+按项目负责人 Instruction 划分为 1.12.1～1.12.12，对应 Gate A～E。**说明**：旧划分下的 1.12.1～1.12.7 工程已提前交付（commits 至 178d8f2），下表状态按新划分如实映射，剩余工作在对应子任务内完成。
 
-- [x] 审查 REST Contract（docs/09）与实际接口及数据模型。
-- [x] 审查 WebSocket Contract（docs/10）及消息信封语义。
-- [x] 编写前端架构设计、REST/WS 接口清单与差距分析（G1～G8）。
-- [x] 明确状态同步（stream_id/stream_sequence/delivery_sequence、Resync、状态版本）与 Decimal 字符串处理。
+#### Gate A — Architecture
 
-#### Task 1.12.2 — 工程初始化
+##### Task 1.12.1 — Architecture & Design（本轮）
 
-- [x] pnpm + Vite + React + TypeScript + Tailwind CSS 基座（shadcn/ui 基础设施：路径别名、cn 工具、CSS 变量随组件引入时落地）。
-- [x] React Router 路由骨架、布局占位与模拟交易声明页脚。
-- [x] Vitest + React Testing Library 测试工具链；Playwright 独立配置（浏览器按需安装）。
-- [x] 依赖版本记录（pnpm-lock.yaml）：React 19.3、Vite 8.3、TypeScript 7.0、Tailwind 4.3、React Router 7.18、Vitest 5.1、Playwright 1.65、pnpm 12.23、Node 26。
-- [x] 后端基线保持不变（300 passed，含 G1～G3 新增测试）。
+- [x] 审查 REST Contract、WebSocket Contract、ADR 0006/0007、实际源码及数据模型。
+- [x] docs/12-UI-UX-DESIGN.md V1.1 落盘（Accepted 规范 + Desktop Only 修订）。
+- [x] docs/11 V0.2：Feature-based 架构、API Capability Matrix（S/P/N 全量矩阵）、差距清单 G1～G11。
+- [x] ADR 0008（Proposed）：Candle 多周期动态订阅（引用计数 + 常驻周期），待负责人确认。
+- [x] docs/06 本划分更新。
+- [ ] 负责人审查 Gate A 交付物；确认 ADR 0008 与账户默认延迟扩展方案（docs/11 §7.2）。
 
-#### Task 1.12.3 — API 与 WebSocket 客户端层
+#### Gate B — Foundation
 
-- [x] Zod 契约 Schema（对应 OpenAPI 与 WS 消息信封，含 delivery_sequence 与控制消息）。
-- [x] REST Client：幂等键生成、错误信封解析为 ApiError、Decimal 字符串、列表/快照/K 线响应校验。
-- [x] WS Client：连接状态机、订阅自动附加 resume_from 游标、心跳应答、退避重连；delivery_sequence 缺口与 stream_id 变更触发 resync，stream_sequence 缺口视为正常。
-- [x] TradingStateSync：缓冲 → REST 快照 → 丢弃过期版本 → 按 (state_version, event_index) 应用，event_id 去重。
-- [x] 17 项客户端层测试（MSW REST 场景 + 脚本化 WS 套接字），build/lint 通过；后端基线保持 300 passed。
+##### Task 1.12.2 — Project Setup
 
-#### Task 1.12.4 — 布局框架与页面骨架
+- [x] pnpm + Vite + React 19 + TS 7 + Tailwind 4 + Router + Vitest/RTL + Playwright（版本见 docs/11 §2）。
 
-- [x] 全局布局、导航与模拟交易声明。
-- [x] 环境引导（创建环境与虚拟资金账户，会话持久化与重置）。
-- [x] 连接状态全局徽标（连接中/已连接/同步中/离线）与 RealtimeGateway（单连接绑定活动环境，订阅后 REST 快照恢复一致性）。
-- [x] 后端默认端口改为 127.0.0.1:8642（CRYPTO_LAB_API_PORT 可覆盖；前端代理 VITE_API_ORIGIN 对应）。前端 25 项测试通过；后端基线保持 300 passed。
+##### Task 1.12.3 — Design System & App Shell
 
-#### Task 1.12.5 — Market 行情页面
+- [x] App Shell：Top Navigation、路由骨架、模拟交易声明、连接徽标、环境引导与切换。
+- [ ] Dark Theme Tokens（docs/12 §4.1 CSS Variables）、shadcn/ui 组件、字体与排版规范、Lucide React。
+- [ ] 目录迁移至 Feature-based 结构（docs/11 §3）。
 
-- [x] Lightweight Charts K 线（REST 历史 + WS 实时合并、闭合保护、增量 update）。
-- [x] 历史分页（before 游标）与断线缺口补齐（resync 后以 after 拉取缺失区间）。
-- [x] 行情质量状态展示与下单闸门联动（非 VALID / 离线时提示暂停交易）；来源与数据时间标注。
-- [x] 真实联调冒烟：经 Vite 代理创建环境/账户，WS 收到 54 条真实 OKX 双周期 K 线，delivery_sequence 连续。前端 44 项测试通过。
+##### Task 1.12.4 — REST API Client
 
-#### Task 1.12.6 — 模拟交易与账户页面
+- [x] Zod 契约 Schema、RestClient（幂等键、错误信封、列表/快照/K 线校验）。
 
-- [x] 下单意图表单：方向/类型切换、市价买预算必填、延迟预设（含 CUSTOM）、客户端 Zod 校验镜像后端契约、提交中禁用防重复、每次提交新幂等键、错误码可读展示。
-- [x] 交易闸门：行情非 VALID 或连接离线时禁用下单并说明原因。
-- [x] 订单列表/取消（幂等键 + 网关 Resync）、成交记录（只读）、余额与持仓（G2/G3 实时 topic 驱动）。
-- [x] 配置延迟、实际模拟延迟、调度滞后三列分开展示并附说明；费用、来源、数据时间声明齐全。前端 58 项测试通过。
+##### Task 1.12.5 — Realtime Client
 
-#### Task 1.12.7 — 前端测试与验收准备
+- [x] WSClient 状态机（resume 游标、心跳、退避重连、delivery_sequence/stream_id 语义）、TradingStateSync。
 
-- [ ] Vitest/RTL 单测与 Playwright 关键流程（本地真实后端 + 测试库，禁用真实 Feed）。
-- [ ] 无障碍与加载/错误态检查；联调准备清单输出。
+#### Gate C — Trading Experience
+
+##### Task 1.12.6 — Candlestick Chart
+
+- [x] Lightweight Charts 蜡烛图：REST seed + WS upsert、闭合保护、分页、断线补齐、周期切换。
+- [ ] Volume 副图、Last Price Line、OHLC 图例、成交标记（§9.6）、初始化竞态隔离、缺失区间标记。
+- [ ] 多周期实时能力落地（依赖 ADR 0008 确认；过渡期用全量常驻周期配置）。
+
+##### Task 1.12.7 — Market Workspace
+
+- [ ] 三栏 Resizable Panels（react-resizable-panels）+ 底部 Activity Panel + 布局持久化（版本化 LocalStorage）。
+- [ ] Market Header（§8：24H 统计以后端实际字段为准，缺失显示 --）。
+- [ ] Order Book / Market Trades Tab 面板（深度条、Spread、点击价格填入限价）。
+- [ ] 底部状态栏（§6.3）。
+
+##### Task 1.12.8 — Order Entry
+
+- [x] 订单意图表单基础（方向/类型、预算、延迟预设、Zod 校验、防重复、幂等键、错误展示、交易闸门）。
+- [ ] 下单确认 Dialog（§11.4 预览：环境/账户/品种/方向/数量/限价或参考价/预算/本地参考手续费估算，明确标注）。
+- [ ] 可用余额展示、Allocation 百分比快捷（Decimal 计算）、订单簿价格填入限价、术语 Tooltip。
+
+##### Task 1.12.9 — Order Management
+
+- [x] 订单列表（限价列、三列延迟口径、取消+幂等+Resync）、成交记录、余额持仓视图、手动刷新。
+- [ ] Activity Panel Tab 化（当前委托/历史订单/成交/余额/持仓）与账户同步三态展示。
+- [ ] Execution Detail Drawer（§14：仅展示后端已有字段）、订单状态中文映射（§13）、部分成交展示。
+
+#### Gate D — Account Experience
+
+##### Task 1.12.10 — Account & Portfolio
+
+- [x] 账户页余额与持仓（Ledger/Fill History 投影）。
+- [ ] Overview 页（§15：估值标注币种与数据时间、无法估值资产列示；无收益曲线）。
+
+##### Task 1.12.11 — Markets & Settings
+
+- [ ] Markets 页（已接入品种、质量列、点击进入 Trading）。
+- [ ] Settings 页（环境/账户/工作区/系统状态，§17）、环境选择器进顶栏、Query 缓存环境隔离。
+
+#### Gate E — Frontend Acceptance
+
+##### Task 1.12.12 — Frontend Acceptance
+
+- [x] E2E 基础：真实后端 + 隔离测试库 + 关闭 Feed（引导/下单意图/订单表/账户/会话恢复 2 项通过）；运行须剥离系统代理（docs/11 §9）。
+- [ ] 完整 E2E（确认流程、成交与余额变化、行情失效禁用、布局持久化、环境切换）。
+- [ ] Desktop Acceptance Matrix（§21.1 四视口）、可访问性检查、性能检查（§20）。
+- [ ] Task 1.12 验收报告。不自动进入 Task 1.13。
+
 
 ### Task 1.13 — 前后端联调与 Phase 1 验收
 
