@@ -56,6 +56,7 @@ ledger_entries = Table(
     Column("reason", String(32), nullable=False),
     Column("reference_id", String(128)),
     Column("created_ts_ms", BigInteger, nullable=False),
+    Column("ledger_sequence", BigInteger, nullable=False),
     ForeignKeyConstraint(
         ("environment_id", "account_id"),
         ("paper_accounts.environment_id", "paper_accounts.account_id"),
@@ -64,6 +65,7 @@ ledger_entries = Table(
         "available_delta <> 0 OR locked_delta <> 0",
         name="ck_ledger_nonzero_delta",
     ),
+    UniqueConstraint("account_id", "ledger_sequence", name="uq_ledger_account_sequence"),
 )
 Index("ix_ledger_account_time", ledger_entries.c.account_id, ledger_entries.c.created_ts_ms)
 
@@ -140,7 +142,11 @@ executions = Table(
     Column("liquidity_role", String(16), nullable=False),
     Column("market_event_id", String(200)),
     Column("fill_sequence", BigInteger, nullable=False),
+    Column("execution_sequence", BigInteger, nullable=False),
     UniqueConstraint("order_id", "fill_sequence", name="uq_execution_order_sequence"),
+    UniqueConstraint(
+        "environment_id", "execution_sequence", name="uq_execution_environment_sequence"
+    ),
     CheckConstraint("price > 0 AND quantity > 0", name="ck_execution_values_positive"),
 )
 
@@ -210,6 +216,8 @@ simulated_liquidity = Table(
     Column("source_book_event_id", String(200), nullable=False),
     Column("residual_bids_json", JSONB, nullable=False),
     Column("residual_asks_json", JSONB, nullable=False),
+    Column("market_book_json", JSONB, nullable=False),
+    Column("consumption_ids_json", JSONB, nullable=False),
     Column("updated_ts_ms", BigInteger, nullable=False),
 )
 
