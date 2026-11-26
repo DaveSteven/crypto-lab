@@ -9,7 +9,12 @@ vi.mock('@/shared/api/client', () => ({
 }))
 
 const chartApi = {
+  priceScale: vi.fn(() => ({ applyOptions: vi.fn() })),
+  subscribeCrosshairMove: vi.fn(),
+  unsubscribeCrosshairMove: vi.fn(),
   addSeries: vi.fn(() => ({
+    applyOptions: vi.fn(),
+    priceScale: vi.fn(() => ({ applyOptions: vi.fn() })),
     setData: vi.fn(),
     update: vi.fn(),
   })),
@@ -20,6 +25,8 @@ const chartApi = {
 
 vi.mock('lightweight-charts', () => ({
   CandlestickSeries: {},
+  HistogramSeries: {},
+  createSeriesMarkers: vi.fn(() => ({ setMarkers: vi.fn() })),
   createChart: vi.fn(() => chartApi),
 }))
 

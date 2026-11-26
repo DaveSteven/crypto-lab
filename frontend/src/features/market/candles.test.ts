@@ -2,8 +2,12 @@ import { describe, expect, test } from 'vitest'
 import {
   barFromPayload,
   candleKey,
+  buildTradeMarkers,
+  findGaps,
   mergeCandlePage,
   toChartData,
+  toChartDataWithGaps,
+  toVolumeData,
   upsertCandle,
   type CandleBar,
 } from './candles'
@@ -17,6 +21,7 @@ function bar(openTsMs: number, close: string, isClosed = true): CandleBar {
     high: '102',
     low: '99',
     close,
+    baseVolume: '2',
     isClosed,
   }
 }
@@ -98,5 +103,61 @@ describe('helpers', () => {
       },
     )
     expect(result).toMatchObject({ eventId: 'evt-1', openTsMs: 60_000, close: '101' })
+  })
+})
+
+describe('init race protection', () => {
+  test('late unclosed REST page never replaces a closed or newer realtime bar', () => {
+    const existing = [bar(60_000, 'closed', true), bar(120_000, 'ws-live', false)]
+    const page = [bar(60_000, 'rest-open', false), bar(120_000, 'rest-old', false)]
+    const merged = mergeCandlePage(existing, page)
+    expect(merged.map((b) => b.close)).toEqual(['closed', 'ws-live'])
+  })
+
+  test('closed REST bar replaces an unclosed realtime bar', () => {
+    const merged = mergeCandlePage([bar(60_000, 'ws', false)], [bar(60_000, 'final', true)])
+    expect(merged[0].close).toBe('final')
+  })
+})
+
+describe('gaps', () => {
+  test('findGaps reports missing ranges without inventing bars', () => {
+    const bars = [bar(0, 'a'), bar(60_000, 'b'), bar(240_000, 'c')]
+    expect(findGaps(bars, '1m')).toEqual([{ fromOpenTsMs: 120_000, toOpenTsMs: 180_000, missing: 2 }])
+  })
+
+  test('toChartDataWithGaps inserts whitespace slots only (no OHLC values)', () => {
+    const data = toChartDataWithGaps([bar(0, 'a'), bar(180_000, 'b')], '1m')
+    expect(data.map((d) => d.time)).toEqual([0, 60, 120, 180])
+    expect('open' in data[1]).toBe(false)
+  })
+})
+
+describe('volume and trade markers', () => {
+  test('missing volume is skipped, not drawn as zero', () => {
+    const none = { ...bar(0, '101'), baseVolume: null }
+    expect(toVolumeData([none, bar(60_000, '101')])).toHaveLength(1)
+  })
+
+  test('aggregates same-side fills per candle and keeps execution traceability', () => {
+    const fill = (id: string, ts: number, side: 'BUY' | 'SELL') => ({
+      execution_id: id,
+      order_id: 'o1',
+      instrument_id: 'X',
+      side,
+      price: '100',
+      quantity: '0.1',
+      executed_ts_ms: ts,
+    })
+    const markers = buildTradeMarkers(
+      [fill('a', 61_000, 'BUY'), fill('b', 90_000, 'BUY'), fill('c', 100_000, 'SELL')],
+      'X',
+      '1m',
+    )
+    expect(markers).toHaveLength(2)
+    const buy = markers.find((m) => m.side === 'BUY')!
+    expect(buy.time).toBe(60)
+    expect(buy.executionIds).toEqual(['a', 'b'])
+    expect(buy.text).toContain('0.2')
   })
 })

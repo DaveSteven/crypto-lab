@@ -98,7 +98,8 @@ describe('marketStore', () => {
         high: '100.5',
         low: '99.5',
         close: '100.2',
-        isClosed: true,
+        baseVolume: null,
+      isClosed: true,
       },
       {
         eventId: 'h-2',
@@ -108,7 +109,8 @@ describe('marketStore', () => {
         high: '100',
         low: '98',
         close: '99.5',
-        isClosed: true,
+        baseVolume: null,
+      isClosed: true,
       },
     ])
     const bars = useMarketStore.getState().candles['okx:SPOT:BTC/USDT|1m']

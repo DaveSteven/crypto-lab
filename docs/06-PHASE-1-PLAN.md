@@ -33,7 +33,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.9 | 数据持久化 | Completed |
 | 1.10 | 后端服务与 REST API | Completed |
 | 1.11 | 实时行情服务 | Completed |
-| 1.12 | React 前端应用 | In Progress（Gate A Accepted；1.12.3 待 UI 验收） |
+| 1.12 | React 前端应用 | In Progress（Gate A Accepted；1.12.3 UI 验收通过；1.12.6 前端部分完成，ADR 0008 后端待实施） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Pending |
 
 ### Task 1.1 — 模拟账户与资金流水
@@ -184,7 +184,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 
 - [x] pnpm + Vite + React 19 + TS 7 + Tailwind 4 + Router + Vitest/RTL + Playwright（版本见 docs/11 §2）。
 
-##### Task 1.12.3 — Design System & App Shell（实现完成，待 UI 验收）
+##### Task 1.12.3 — Design System & App Shell（UI 验收通过，2026-11-26）
 
 - [x] Dark Theme Tokens（docs/12 §4.1 全量 CSS Variables + Tailwind v4 @theme；tabular-nums；prefers-reduced-motion）。
 - [x] 基础 UI 组件（shared/ui：Button/Input/Select/Label/Badge/Panel/Tabs/StatusDot/TermTip/Empty/Error；shadcn 约定 + cva）。
@@ -192,7 +192,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 - [x] App Shell：48px 顶栏（品牌、已实现导航项、环境选择器、Paper Trading 徽标、连接徽标）、24px 状态栏（Feed/质量/最近行情/WS/同步/时区）。
 - [x] 可调整三栏 Trading Workspace（54/21/25）+ 底部 Activity Panel 五 Tab（28%），版本化 localStorage 自动保存，键盘可操作分隔线。
 - [x] Desktop Only：<1280px 显示使用提示；路由 / → /trading；未实现页面不出导航入口（§5.2）。
-- [ ] 负责人 UI 验收（截图已提交：bootstrap / workspace / order-entry 1440×900）。
+- [x] 负责人 UI 验收通过（截图已提交：bootstrap / workspace / order-entry 1440×900）。
 - 技术取舍：Lucide React 随 1.12.7+ 图标需求引入；TermTip 采用纯 CSS 实现（无 Radix 依赖），键盘可聚焦。
 
 ##### Task 1.12.4 — REST API Client
@@ -208,7 +208,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 ##### Task 1.12.6 — Candlestick Chart
 
 - [x] Lightweight Charts 蜡烛图：REST seed + WS upsert、闭合保护、分页、断线补齐、周期切换。
-- [ ] Volume 副图、Last Price Line、OHLC 图例、成交标记（§9.6）、初始化竞态隔离、缺失区间标记。
+- [x] Volume 副图（无成交量不补 0）、Last Price Line、OHLC 图例（Crosshair 联动）、个人成交标记（§9.6，按真实成交时间所在 K 线聚合，保留 execution_id/order_id 追溯）、初始化竞态隔离（迟到未闭合 REST 页不覆盖已闭合/更新的实时 K 线）、缺失区间留空并提示（不生成假 K 线）。已通过 vitest（64 项）与 tsc/build；尚未做真实浏览器视觉验收。
 - [ ] 多周期实时能力落地（依赖 ADR 0008 确认；过渡期用全量常驻周期配置）。
 
 ##### Task 1.12.7 — Market Workspace

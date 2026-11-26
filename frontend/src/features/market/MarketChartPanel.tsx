@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CandlestickSeries,
   createChart,
+  createSeriesMarkers,
+  HistogramSeries,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type Time,
 } from 'lightweight-charts'
+import { useTradingStore } from '@/features/trading/tradingStore'
 import { rest } from '@/shared/api/client'
 import { useConnectionStore, connectionDisplay } from '@/app/connectionStore'
 import { useMarketStore } from './marketStore'
-import { barFromPayload, candleKey, toChartData, type CandleBar } from './candles'
+import {
+  barFromPayload,
+  buildTradeMarkers,
+  candleKey,
+  findGaps,
+  toChartDataWithGaps,
+  toVolumeData,
+  type CandleBar,
+} from './candles'
 import { Badge, Button } from '@/shared/ui'
 
 export const INSTRUMENT = 'okx:SPOT:BTC/USDT'
@@ -38,6 +51,10 @@ export function MarketChartPanel() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const [legend, setLegend] = useState<CandleBar | null>(null)
+  const executions = useTradingStore((state) => state.executions)
 
   const key = candleKey(INSTRUMENT, interval)
   const bars = useMarketStore((state) => state.candles[key]) ?? EMPTY_BARS
@@ -112,19 +129,70 @@ export function MarketChartPanel() {
       wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
     })
+    // Last Price Line (docs/12 §9.2) — explicit, dashed line + axis label.
+    series.applyOptions({ lastValueVisible: true, priceLineVisible: true })
+    const volume = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+      lastValueVisible: false,
+      priceLineVisible: false,
+    })
+    chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } })
     chartRef.current = chart
     seriesRef.current = series
+    volumeRef.current = volume
+    markersRef.current = createSeriesMarkers(series, [])
     return () => {
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      volumeRef.current = null
+      markersRef.current = null
     }
+  }, [])
+
+  const barsRef = useRef(bars)
+  useEffect(() => {
+    barsRef.current = bars
+  }, [bars])
+  useEffect(() => {
+    const chart = chartRef.current
+    if (chart === null) return
+    const handler = (param: { time?: Time }) => {
+      if (param.time === undefined) return setLegend(null)
+      const hit = barsRef.current.find((bar) => Math.floor(bar.openTsMs / 1_000) === param.time)
+      setLegend(hit ?? null)
+    }
+    chart.subscribeCrosshairMove(handler)
+    return () => chart.unsubscribeCrosshairMove(handler)
   }, [])
 
   useEffect(() => {
     if (seriesRef.current === null) return
-    seriesRef.current.setData(toChartData(bars) as never)
-  }, [bars])
+    seriesRef.current.setData(toChartDataWithGaps(bars, interval) as never)
+    volumeRef.current?.setData(toVolumeData(bars) as never)
+  }, [bars, interval])
+
+  const markers = useMemo(
+    () => buildTradeMarkers(executions, INSTRUMENT, interval),
+    [executions, interval],
+  )
+  useEffect(() => {
+    markersRef.current?.setMarkers(
+      markers.map((marker) => ({
+        time: marker.time as Time,
+        position: marker.side === 'BUY' ? ('belowBar' as const) : ('aboveBar' as const),
+        shape: marker.side === 'BUY' ? ('arrowUp' as const) : ('arrowDown' as const),
+        color: marker.side === 'BUY' ? '#22c55e' : '#ef4444',
+        text: marker.text,
+      })),
+    )
+  }, [markers])
+
+  const gaps = useMemo(() => findGaps(bars, interval), [bars, interval])
+  const missingTotal = gaps.reduce((sum, gap) => sum + gap.missing, 0)
+  const shown = legend ?? bars[bars.length - 1] ?? null
 
   async function loadEarlier() {
     if (bars.length === 0) return
@@ -208,7 +276,27 @@ export function MarketChartPanel() {
         </Button>
       </div>
 
-      <div ref={containerRef} className="min-h-0 w-full flex-1" data-testid="candle-chart" />
+      <div className="relative min-h-0 w-full flex-1">
+        {shown !== null && (
+          <div
+            className="numeric pointer-events-none absolute left-2 top-1 z-10 flex gap-3 text-[11px] text-ink-secondary"
+            data-testid="ohlc-legend"
+          >
+            <span>开 {shown.open}</span>
+            <span>高 {shown.high}</span>
+            <span>低 {shown.low}</span>
+            <span>收 {shown.close}</span>
+            <span>量 {shown.baseVolume ?? '--'}</span>
+          </div>
+        )}
+        <div ref={containerRef} className="h-full w-full" data-testid="candle-chart" />
+      </div>
+
+      {missingTotal > 0 && (
+        <p role="status" className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-warning">
+          数据缺失：{gaps.length} 段共 {missingTotal} 根 K 线暂无数据（图中留空，未补零）。
+        </p>
+      )}
 
       {marketUnavailable && (
         <p role="status" className="shrink-0 border-t border-line px-3 py-1 text-[11px] text-ink-muted">
