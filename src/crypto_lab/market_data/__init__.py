@@ -1,5 +1,11 @@
 """Market-data normalization and integrity helpers."""
 
+from crypto_lab.market_data.candles import (
+    OKX_CHANNEL,
+    OkxCandleClient,
+    normalize_okx_rest_candles,
+    normalize_okx_websocket_candles,
+)
 from crypto_lab.market_data.normalizers import normalize_ticker
 from crypto_lab.market_data.okx import normalize_okx_order_book, normalize_okx_trades
 from crypto_lab.market_data.ordering import EventSequenceTracker
@@ -10,10 +16,14 @@ from crypto_lab.market_data.state import (
 )
 
 __all__ = [
+    "OKX_CHANNEL",
     "EventSequenceTracker",
     "InvalidOrderBookStateError",
     "OrderBookMarketState",
     "OrderBookView",
+    "OkxCandleClient",
+    "normalize_okx_rest_candles",
+    "normalize_okx_websocket_candles",
     "normalize_okx_order_book",
     "normalize_okx_trades",
     "normalize_ticker",

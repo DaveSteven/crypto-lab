@@ -9,6 +9,7 @@ from crypto_lab.realtime.hub import (
     SlowConsumer,
     Subscription,
 )
+from crypto_lab.realtime.market import MarketRealtimeBridge
 from crypto_lab.realtime.protocol import parse_client_message
 from crypto_lab.realtime.publisher import RealtimePublisher
 
@@ -18,6 +19,7 @@ __all__ = [
     "RealtimeEvent",
     "RealtimeHubRegistry",
     "RealtimePublisher",
+    "MarketRealtimeBridge",
     "ReplayUnavailable",
     "SlowConsumer",
     "Subscription",

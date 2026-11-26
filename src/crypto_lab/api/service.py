@@ -16,6 +16,7 @@ from sqlalchemy.engine import Engine
 
 from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
+from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.models import ExchangeId
 from crypto_lab.persistence import PostgresUnitOfWork, schema
 from crypto_lab.realtime import RealtimeEvent, RealtimePublisher
@@ -58,9 +59,11 @@ class ApplicationService:
         fee_schedule: FeeSchedule | None = None,
         now_ms: Callable[[], int] = utc_now_ms,
         realtime_publisher: RealtimePublisher | None = None,
+        candle_client: OkxCandleClient | None = None,
     ) -> None:
         self.engine = engine
         self.realtime_publisher = realtime_publisher
+        self.candle_client = candle_client
         self.uow = PostgresUnitOfWork(
             engine,
             after_commit=(
@@ -492,6 +495,33 @@ class ApplicationService:
                     schema.positions.c.instrument_id,
                 ),
             }
+
+    def candle_history(
+        self,
+        instrument_id: str,
+        interval: str,
+        limit: int,
+        before: int | None,
+        after: int | None,
+    ) -> dict[str, Any]:
+        if self.candle_client is None:
+            raise ApplicationError(
+                "TOPIC_UNAVAILABLE", "real candle source is not configured", status_code=503
+            )
+        try:
+            events = self.candle_client.history(
+                instrument_id, interval, limit=limit, before=before, after=after
+            )
+        except ValueError as exc:
+            raise ApplicationError("INVALID_REQUEST", str(exc), status_code=400) from exc
+        except OSError as exc:
+            raise ApplicationError(
+                "MARKET_DATA_UNAVAILABLE", "OKX candle source is unavailable", status_code=503
+            ) from exc
+        return {
+            "items": [event.model_dump(mode="json") for event in events],
+            "source": "OKX_PUBLIC_REST",
+        }
 
     def ready(self) -> bool:
         try:

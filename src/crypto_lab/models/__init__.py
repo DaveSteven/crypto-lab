@@ -1,5 +1,6 @@
 """Canonical data models used by Crypto Lab."""
 
+from crypto_lab.models.candle import CANDLE_INTERVAL_MS, Candle
 from crypto_lab.models.common import MarketEventEnvelope
 from crypto_lab.models.enums import (
     DataQualityStatus,
@@ -18,6 +19,8 @@ from crypto_lab.models.trade import Trade
 
 __all__ = [
     "APIProbeResult",
+    "CANDLE_INTERVAL_MS",
+    "Candle",
     "DataQualityStatus",
     "DataSourceType",
     "EventOrderingResult",

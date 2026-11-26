@@ -18,6 +18,7 @@ from sqlalchemy.engine import Engine
 from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
 from crypto_lab.api.service import ApplicationService
+from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.persistence import PersistenceError
 from crypto_lab.realtime import (
     RealtimeHubRegistry,
@@ -61,6 +62,7 @@ def create_app(
                 taker_rate=Decimal("0.001"),
             ),
             realtime_publisher=publisher,
+            candle_client=OkxCandleClient(),
         )
 
     @asynccontextmanager
@@ -195,6 +197,16 @@ def create_app(
     @app.get("/api/v1/environments/{environment_id}/snapshot")
     def snapshot(environment_id: str, account_id: str) -> dict[str, Any]:
         return service.snapshot(environment_id, account_id)
+
+    @app.get("/api/v1/market/candles")
+    def candle_history(
+        instrument_id: str,
+        interval: str,
+        limit: Annotated[int, Query(ge=1, le=300)] = 100,
+        before: int | None = None,
+        after: int | None = None,
+    ) -> dict[str, Any]:
+        return service.candle_history(instrument_id, interval, limit, before, after)
 
     @app.websocket("/api/v1/ws/environments/{environment_id}")
     async def realtime_endpoint(websocket: WebSocket, environment_id: str) -> None:
