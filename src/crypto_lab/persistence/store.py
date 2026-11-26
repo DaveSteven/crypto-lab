@@ -94,8 +94,15 @@ class PostgresStore:
         orders: list[dict[str, object]],
         balances: list[dict[str, object]],
         created_ts_ms: int,
+        executions: list[dict[str, object]] | None = None,
+        positions: list[dict[str, object]] | None = None,
     ) -> None:
-        """Stage committed-order/balance notifications for a trading transaction."""
+        """Stage committed trading notifications for a trading transaction.
+
+        Staged topics: orders, balances, executions and positions. All events
+        share the transaction's state_version and are published only after
+        the same database transaction commits.
+        """
         event_index = 0
         for order in orders:
             self.stage_realtime_event(
@@ -119,6 +126,35 @@ class PostgresStore:
                     event_id=f"{transaction_id}:balance:{balance['asset']}",
                     event_ts_ms=created_ts_ms,
                     payload=balance,
+                    account_id=account_id,
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1
+        for execution in executions or ():
+            self.stage_realtime_event(
+                RealtimeEvent(
+                    topic="executions",
+                    event_id=f"{transaction_id}:execution:{execution['execution_id']}",
+                    event_ts_ms=created_ts_ms,
+                    payload=execution,
+                    account_id=account_id,
+                    order_id=str(execution["order_id"]),
+                    state_version=state_version,
+                    transaction_id=transaction_id,
+                    event_index=event_index,
+                )
+            )
+            event_index += 1
+        for position in positions or ():
+            self.stage_realtime_event(
+                RealtimeEvent(
+                    topic="positions",
+                    event_id=f"{transaction_id}:position:{position['instrument_id']}",
+                    event_ts_ms=created_ts_ms,
+                    payload=position,
                     account_id=account_id,
                     state_version=state_version,
                     transaction_id=transaction_id,

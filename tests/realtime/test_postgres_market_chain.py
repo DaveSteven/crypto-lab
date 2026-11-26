@@ -240,11 +240,23 @@ def test_market_buy_executes_and_commits_full_chain(chain, database_url) -> None
     assert Decimal(balances["BTC"][0]) == Decimal("1")
     # Buy notional + taker fee leaves the quote balance.
     assert Decimal(balances["USDT"][0]) == Decimal("10000") - Decimal("101") - Decimal("0.101")
-    # Committed events carry order and balance notifications with a version.
+    # Committed events carry order, balance, execution and position
+    # notifications with the same transaction state version.
     topics = topic_types(chain.publisher.events)
-    assert "orders" in topics and "balances" in topics
+    assert {"orders", "balances", "executions", "positions"} <= set(topics)
     order_events = [event for event in chain.publisher.events if event.topic == "orders"]
     assert order_events[-1].state_version >= 1
+    execution_events = [
+        event for event in chain.publisher.events if event.topic == "executions"
+    ]
+    assert len(execution_events) == 1
+    assert execution_events[0].payload["price"] == "101"
+    position_events = [
+        event for event in chain.publisher.events if event.topic == "positions"
+    ]
+    assert len(position_events) == 1
+    assert position_events[0].payload["quantity"] == "1"
+    assert position_events[0].payload["instrument_id"] == INSTRUMENT
 
 
 def test_market_sell_realizes_pnl_and_updates_positions(chain, database_url) -> None:

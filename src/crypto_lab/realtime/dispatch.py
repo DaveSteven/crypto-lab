@@ -294,6 +294,7 @@ class EnvironmentMarketDispatcher:
             store.persist_id_generator(environment_id, ids)
             state_version = store.bump_state_version(environment_id, clock.now_utc_ms())
             allocation_ids = {allocation.order_id for allocation in result.allocations}
+            position_projection = PortfolioEngine((*executions, *new_executions))
             store.stage_execution_events(
                 environment_id=environment_id,
                 account_id=account_id,
@@ -308,6 +309,12 @@ class EnvironmentMarketDispatcher:
                     balance.model_dump(mode="json") for balance in ledger.balances()
                 ],
                 created_ts_ms=self.now_ms(),
+                executions=[item.model_dump(mode="json") for item in new_executions],
+                positions=[
+                    position.model_dump(mode="json")
+                    for position in position_projection.positions()
+                    if position.account_id == account_id
+                ],
             )
         if new_trade_state is not None:
             self._environments[environment_id]["trade_state"] = new_trade_state
@@ -359,13 +366,14 @@ class EnvironmentMarketDispatcher:
                     else:
                         executed.append(order_id)
                 new_executions = simulator.executions()
+                position_projection = PortfolioEngine((*executions_before, *new_executions))
                 store.persist_trading_state(
                     environment_id=environment_id,
                     ledger=ledger,
                     orders=orders,
                     executions=(*executions_before, *new_executions),
                     # The projection must include this transaction's new fills.
-                    portfolio=PortfolioEngine((*executions_before, *new_executions)),
+                    portfolio=position_projection,
                     scheduler=scheduler,
                 )
                 store.persist_id_generator(environment_id, ids)
@@ -384,6 +392,12 @@ class EnvironmentMarketDispatcher:
                         balance.model_dump(mode="json") for balance in ledger.balances()
                     ],
                     created_ts_ms=self.now_ms(),
+                    executions=[item.model_dump(mode="json") for item in new_executions],
+                    positions=[
+                        position.model_dump(mode="json")
+                        for position in position_projection.positions()
+                        if position.account_id == account_id
+                    ],
                 )
         return {"executed": executed, "rejected": rejected}
 
