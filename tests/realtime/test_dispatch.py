@@ -427,3 +427,55 @@ def test_environments_stay_isolated_from_each_other() -> None:
     assert world_b.executions == ()
     assert world_b.staged == []
     assert world_b.state_version == 0
+
+
+def test_book_arriving_during_run_due_does_not_reject_the_due_order() -> None:
+    """Regression (Task 1.12.10-A audit): run_due executes in a worker thread while the
+    feed keeps updating books. A book received after the run's decision time used to
+    trip the no-lookahead gate and spuriously reject a valid order as
+    MARKET_DATA_UNAVAILABLE. The run must decide against a book snapshot taken at
+    its decision time."""
+    world = World()
+    dispatcher = make_dispatcher(world)
+    dispatcher.register_environment("env-1")
+    dispatcher.apply_order_book_view(book_view("book-1", bid="99", ask="101", received_ts_ms=1_000))
+    order = world.orders.place(
+        instrument_id=INSTRUMENT,
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("1"),
+        market_reference_price=Decimal("101"),
+        max_quote_budget=Decimal("102"),
+        fee_schedule=FEES,
+    )
+    scheduler = ExecutionScheduler(world.orders, world.clock)
+    scheduler.schedule(
+        order.order_id,
+        latency=ExecutionLatency(preset=LatencyPreset.IDEAL),
+        submission_quote_event_id="book-1",
+    )
+    FakeStore(world).persist_trading_state(
+        environment_id="env-1",
+        ledger=world.ledger,
+        orders=world.orders,
+        executions=(),
+        portfolio=PortfolioEngine(),
+        scheduler=scheduler,
+    )
+    world.clock.set_utc_ms(1_500)
+    original = dispatcher._execute_due_order
+
+    def execute_after_new_book(*args, **kwargs):
+        # The feed delivers a newer book (received after this run's "now") first.
+        dispatcher.apply_order_book_view(
+            book_view("book-2", bid="99", ask="101", received_ts_ms=1_520)
+        )
+        return original(*args, **kwargs)
+
+    dispatcher._execute_due_order = execute_after_new_book
+
+    outcome = dispatcher.run_due()
+
+    assert outcome["rejected"] == []
+    assert outcome["executed"] == [order.order_id]
+    assert world.orders.get(order.order_id).status.value == "FILLED"

@@ -74,6 +74,12 @@ class LatestBookState:
     def update(self, view: OrderBookView) -> None:
         self._views[(view.exchange_id.value, view.instrument_id)] = view
 
+    def snapshot(self) -> LatestBookState:
+        """Immutable-in-practice copy used to decide one scheduler run consistently."""
+        copy = LatestBookState()
+        copy._views = dict(self._views)
+        return copy
+
     def latest(self, exchange_id: str, instrument_id: str) -> OrderBookView | None:
         return self._views.get((exchange_id, instrument_id))
 
@@ -310,12 +316,16 @@ class EnvironmentMarketDispatcher:
 
     def run_due(self) -> dict[str, Any]:
         """Execute every due scheduled order across registered environments."""
+        # Snapshot the books BEFORE reading the clock: every view in the snapshot was
+        # received at or before ``now_ms``, so books the feed delivers while this run
+        # executes (it runs in a worker thread) cannot trip the no-lookahead gate.
+        books = self.books.snapshot()
         now_ms = self.now_ms()
         executed: list[str] = []
         rejected: list[str] = []
         for environment_id in self._environments:
             try:
-                outcome = self._run_due_for_environment(environment_id, now_ms)
+                outcome = self._run_due_for_environment(environment_id, now_ms, books)
                 executed.extend(outcome["executed"])
                 rejected.extend(outcome["rejected"])
             except Exception:
@@ -446,7 +456,9 @@ class EnvironmentMarketDispatcher:
         if new_trade_state is not None:
             self._environments[environment_id]["trade_state"] = new_trade_state
 
-    def _run_due_for_environment(self, environment_id: str, now_ms: int) -> dict[str, Any]:
+    def _run_due_for_environment(
+        self, environment_id: str, now_ms: int, books: LatestBookState | None = None
+    ) -> dict[str, Any]:
         executed: list[str] = []
         rejected: list[str] = []
         with self.transaction(environment_id) as store:
@@ -483,6 +495,7 @@ class EnvironmentMarketDispatcher:
                         simulator=_simulator,
                         order=order,
                         execution_ts_ms=execution_ts_ms,
+                        books=books,
                     )
                     _outcomes[order.order_id] = outcome
 
@@ -537,9 +550,11 @@ class EnvironmentMarketDispatcher:
         simulator: ExecutionSimulator,
         order: Any,
         execution_ts_ms: int,
+        books: LatestBookState | None = None,
     ) -> str:
+        books = books if books is not None else self.books
         liquidity = self._restore_or_create_liquidity_by_instrument(
-            store, environment_id, order.instrument_id
+            store, environment_id, order.instrument_id, books=books
         )
         if liquidity is None:
             orders.record_scheduled_execution(
@@ -551,9 +566,9 @@ class EnvironmentMarketDispatcher:
             return "REJECTED"
         executor = ScheduledOrderExecutor(
             orders=orders,
-            market_state=self.books,
-            market_execution=OrderBookExecutionService(self.books, simulator, liquidity),
-            limit_execution=LimitOrderExecutionService(self.books, simulator, liquidity),
+            market_state=books,
+            market_execution=OrderBookExecutionService(books, simulator, liquidity),
+            limit_execution=LimitOrderExecutionService(books, simulator, liquidity),
         )
         executor.register(
             order.order_id,
@@ -591,6 +606,8 @@ class EnvironmentMarketDispatcher:
         environment_id: str,
         instrument_id: str,
         view: OrderBookView | None = None,
+        *,
+        books: LatestBookState | None = None,
     ) -> SimulatedLiquidityView | None:
         existing = store.restore_liquidity_optimistic(
             environment_id=environment_id,
@@ -600,7 +617,7 @@ class EnvironmentMarketDispatcher:
         if existing is not None:
             return existing
         if view is None:
-            view = self.books.latest("okx", instrument_id)
+            view = (books or self.books).latest("okx", instrument_id)
         if view is None or not self._executable_view(view):
             return None
         liquidity = SimulatedLiquidityView(environment_id)
