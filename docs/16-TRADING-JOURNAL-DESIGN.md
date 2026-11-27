@@ -4,13 +4,13 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 对应任务 | Task 1.14.1 — Architecture & Design |
-| 状态 | Proposed / Awaiting Confirmation |
+| 状态 | Accepted |
 | 日期 | 2026-11-27 |
 | 上游基线 | Phase 1 Accepted；docs/08、docs/09、docs/11、docs/12、docs/15 |
 
-本文仅定义架构、数据模型、REST Contract、UI/UX、计算语义、测试策略和实施计划，不包含 Migration 或业务代码。
+本文定义架构、数据模型、REST Contract、UI/UX、计算语义、测试策略和实施计划。V0.2 已纳入负责人对第 13 节全部事项的确认；Task 1.14.1 设计 Gate 已关闭，Migration 与业务代码由 Task 1.14.2 起独立实施。
 
 ## 1. 目标与边界
 
@@ -114,7 +114,9 @@ Journal 属于低频、用户驱动的账户级 CRUD，可使用独立短事务�
 
 ### 3.4 P0 计算公式（Spot Long）
 
-Task 1.14 P0 建议只支持现货 Long 计划；Short/杠杆不在当前交易引擎范围。全部运算使用 Decimal，数量最终按交易所 step size 向下取整：
+Task 1.14 P0 仅支持现货 Long 计划；不支持 Short、杠杆、合约及自动策略执行。全部运算使用 Decimal，数量最终按交易所 step size 向下取整。默认权威风险校验使用实际 Fee Schedule 的 `max(maker_fee_rate, taker_fee_rate)` 作为入场和退出的保守费率；用户可查看其他 Maker/Taker 情景，但不能用其绕过已锁定的实验风险规则。
+
+当前模拟执行引擎已经验证的手续费结算语义为：手续费按成交 quote notional 计算并从 quote asset 收取。因此当前 Spot Long 公式为：
 
 ```text
 quantity = floor_to_step(planned_position_notional / entry_price)
@@ -134,10 +136,12 @@ estimated_net_loss =
 
 net_reward_risk_ratio = estimated_net_profit / estimated_net_loss
 account_risk_ratio = estimated_net_loss / effective_account_equity
-position_ratio = (entry_notional + entry_fee) / effective_account_equity
+position_ratio = entry_notional / effective_account_equity
 ```
 
-`estimated_net_loss` 是计划价格下的估算，不是保证最大亏损；真实退出可能受滑点、延迟、流动性和人工执行影响。零或负分母不计算比率。
+`planned_position_notional` 和 Policy 单笔仓位上限均为不含手续费的名义交易金额；实际资金占用为 `entry_notional + entry_fee`。`estimated_net_loss` 是计划价格下的估算，不是保证最大亏损；真实退出可能受滑点、延迟、流动性和人工执行影响。零或负分母不计算比率。
+
+Fee Schedule Contract 必须返回手续费资产语义。若未来执行引擎支持 base asset、平台币或其他资产扣费，Planner 必须按该语义重新计算净入账数量与平仓完整性，不能继续假设手续费均以 USDT/quote asset 支付。费率或扣费资产语义未知时相关结果为 UNAVAILABLE。
 
 最大允许仓位取以下约束的最小值，并再次应用数量精度及最小交易限制：
 
@@ -148,6 +152,8 @@ position_ratio = (entry_notional + entry_fee) / effective_account_equity
 ### 3.5 P0 权威校验
 
 后端逐项返回 PASS / FAIL / UNAVAILABLE：仓位上限、计划风险上限、最低净收益风险比、`SL < Entry < TP`、可用余额、最小金额/数量、价格与数量精度、行情有效性、有效资产完整性、Fee Schedule 有效性。
+
+账户有效资产采用有效 Bid 估值并包含可用及冻结资产。任一非零资产无法取得当前有效估值时，整体估值标记为不完整，账户风险比例校验返回 UNAVAILABLE；不得用过期估值冒充当前值。可用余额只用于资金充足性校验，有效资产只用于风险和仓位比例校验，两者不得混用。
 
 数值规则通过只表示计划参数满足约束，不代表趋势判断、支撑位或反弹确认信号成立。人工信号结论必须单独记录，不得伪装为自动校验。
 
@@ -225,9 +231,9 @@ Execution 不建立独立可编辑关联表。Journal 的有效 Fill 集合由�
 - `is_checked`、`checked_ts_ms`、`note`。
 - 未来可空 `source_strategy_rule_id`，供 Strategy Version 追溯。
 
-### 4.8 删除与审计
+### 4.8 删除、归档与审计
 
-不提供硬删除 Journal。DRAFT 也转 CANCELLED 并保留原因，以保证研究样本不被选择性删除。数据库级 FK 对交易事实使用 RESTRICT，不级联删除订单或成交。
+不提供硬删除 Journal 或 Plan Revision。DRAFT 也转 CANCELLED 并保留原因，以保证研究样本不被选择性删除。允许归档，但归档不改变客观统计归属。已完成交易的订单归属变更、解除关联、状态转换、首次风险参数、原始 SL/TP 及后续变更必须写入追加式审计记录并包含原因。数据库级 FK 对交易事实使用 RESTRICT，不级联删除订单或成交。
 
 ## 5. Order / Fill 关联规则
 
@@ -241,6 +247,8 @@ Execution 不建立独立可编辑关联表。Journal 的有效 Fill 集合由�
 6. 取消关联只删除主观归属，不删除任何交易事实；ACTIVE/CLOSED/REVIEWED Journal 的取消关联需要显式原因和审计记录。
 
 建议允许订单提交后关联，也为未来提供“从 Journal 发起下单意图时附带 `journal_id`”的应用层便利，但订单接口不能依赖 Journal 才可交易，自由交易模式必须继续存在。
+
+订单成功创建而 Journal Link 失败时，客户端不得重新提交订单。关联操作必须具有独立 Idempotency-Key，并允许使用既有 `order_id` 安全恢复关联；重复恢复返回同一关联结果。关联和状态转换使用 Journal 行锁、版本条件或等价并发控制。Journal 写事务不得锁定或递增交易引擎 `state_version`。
 
 ## 6. 日志级盈亏语义
 
@@ -276,14 +284,17 @@ journal_fees =
 
 ### 6.4 完整交易判定
 
-建议只有同时满足以下条件才标记为 `trade_complete=true`：
+客观交易完成与研究复盘完成必须分开：
 
 - Journal 至少关联一个有成交的订单。
-- 关联成交在该 Journal 口径下的净基础资产数量回到零。
+- 关联成交在该 Journal 口径下的净基础资产数量精确回到零；计算必须纳入实际手续费资产及净入账数量语义，并应用交易所 Decimal 精度，不使用任意 float 容差掩盖残余仓位。
 - 不存在关联订单处于非终态。
-- Journal 已完成复盘。
+
+满足以上客观条件时进入 `CLOSED`，并计入客观已完成交易数；完成复盘后进入 `REVIEWED`。未来 Analytics 分别统计已完成交易、已完成复盘、待复盘，以及规则遵守、违规和待评估数量。违规交易不得从客观结果中排除。Experiment 001 的完成条件为 30 笔客观完整交易全部进入 REVIEWED。
 
 如果关联订单只是卖出账户既有库存，或关联范围不闭合，显示“样本不完整”，不得纳入未来 Experiment 的完整交易样本数。
+
+ACTIVE 状态下若所有关联订单均已进入终态且从未产生 Fill，可由用户显式取消计划并记录原因；订单拒绝或取消本身不等于完成交易。
 
 ## 7. REST API Contract
 
@@ -312,6 +323,8 @@ journal_fees =
 | GET | `/journals/{journal_id}/metrics` | 读取派生的成交、费用及已实现盈亏口径 |
 | POST | `/trade-planner/preview` | 无副作用的权威 Decimal 计算与校验预览 |
 | GET | `/trade-planner/context?instrument_id=` | 有效资产、余额、Fee Schedule、Market Rules 及数据质量 |
+| GET | `/fee-schedule` | 当前后端实际 Maker/Taker 费率、扣费资产语义及配置身份 |
+| GET | `/market-rules/{instrument_id}` | Tick/step/min quantity/min notional 等权威规则 |
 
 列表建议采用 `(updated_ts_ms, journal_id)` 稳定游标，默认 30、最大 100。响应 Decimal 均为字符串，时间为 UTC 毫秒。
 
@@ -319,9 +332,11 @@ journal_fees =
 
 - Create、状态动作、关联和追加记录使用既有 `Idempotency-Key` 机制。
 - PATCH 使用 `version` 乐观锁；版本不一致返回 `409 JOURNAL_VERSION_CONFLICT` 和当前版本。
-- Journal 写事务锁定 Journal 行，不锁环境交易根；关联时只读并验证 Order。
+- Journal 写事务锁定 Journal 行，不锁环境交易根；关联时只读并验证 Order。所有状态转换及关键关联变更都必须具备明确并发控制。
 - 客观交易在 Journal 编辑期间可继续提交与成交，Journal 详情下次读取时获得最新派生 Fill。
-- Preview 不写数据库；保存 Revision 时后端必须重新读取 context 并重新校验，不信任前端提交的计算结果。
+- Preview 不写数据库；保存 Revision 时后端必须重新读取最新 context 并重新校验，不信任前端提交的计算结果。前端计算结果永远不是权威结果。
+- Order 创建与 Journal Link 使用不同幂等操作；创建成功但 Link 失败时使用原 `order_id` 恢复关联，禁止为恢复关联重复提交订单。
+- Journal 写入不得改变交易引擎 `state_version`。
 
 ### 7.3 错误码
 
@@ -363,12 +378,14 @@ journal_fees =
 - 止损、止盈旁显示“仅作计划记录，不会自动下单”。
 - 关联订单通过当前账户真实订单选择器完成，禁止跨环境/账户候选项。
 - READY 后编辑显示 Revision diff，并保留首次确认快照；不得静默覆盖原风险参数。
+- 交易前 Checklist 与交易后纪律评估使用不同的数据分组和完成语义，不得以事后评价改写交易前记录。
 
 ### 8.5 与 Trading / Chart 联动
 
 - “带入下单”仅把当前已确认 Revision 的品种、方向、计划数量/预算和可适用的限价复制到 Order Entry 草稿；不自动提交，不绕过现有强制确认 Dialog。
 - SL/TP 不映射为真实订单，不触发自动平仓；用户仍需自行管理模拟订单。
 - Order 成功创建后才建立 Journal Link；请求失败不得伪造关联。
+- 若 Order 已创建而 Link 失败，UI 保留原 `order_id` 并重试幂等关联，绝不重新下单。
 - 详情展示计划 Entry/SL/TP 与实际 Fill VWAP、手续费及结果偏差，不覆盖原计划。
 - 为 Task 1.15 定义只读 `PlanPriceLines` 视图模型（Entry/SL/TP、revision ID、颜色语义）；本轮不提前修改图表。
 
@@ -413,6 +430,8 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 
 - 状态转换、Decimal 计划值校验、风险/收益风险比公式。
 - step size 向下调整、双边手续费、最大仓位多约束取最小、零分母及极小非零值。
+- 保守 `max(maker,taker)` 校验、其他费率情景仅供参考、未知费率/扣费资产语义返回 UNAVAILABLE。
+- Quote-asset 手续费净数量语义，以及未来非 quote fee 场景不得误用现有公式。
 - Entry/SL/TP 关系、余额不足、最小交易限制、行情/估值/Fee Schedule 不可用。
 - 完整交易判定、关联 Fill 派生、按币种费用汇总和 PnL 归因。
 - Checklist 完成规则、乐观锁、标签标准化。
@@ -424,6 +443,8 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 - 幂等、并发 PATCH 冲突、事务回滚、归档后数据保留。
 - Journal 写入不改变 Ledger、Order、Execution、Portfolio、流动性或交易 state_version。
 - 首次 READY 快照不可变，后续 Revision 不覆盖初始风险参数。
+- Order 已创建但 Link 失败后的幂等恢复不会重复订单；并发关联只有一个归属成功。
+- CLOSED 与 REVIEWED 分离，归档、解除关联或违规标记不得静默移除客观交易样本。
 
 ### 11.3 API 测试
 
@@ -431,6 +452,8 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 - 跨范围关联拒绝、状态动作、关联后新 Fill 自动出现。
 - 指标不可用与样本不完整不返回误导性零值。
 - Preview 与保存时重新校验；Fee Schedule、行情或余额变化导致旧预览失效。
+- Fee Schedule、Market Rules 与 Planner Context 只读接口只返回后端实际配置，不回退到前端默认值。
+- 风险校验不阻止撤单、减仓和平仓；已确认计划不被描述为入场信号，SL/TP 不被描述为自动订单。
 
 ### 11.4 前端测试与验收
 
@@ -456,19 +479,22 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 
 每个子任务通过相关测试后创建独立本地 Commit；不得自动进入下一阶段或 Push。
 
-## 13. 需要负责人确认的设计决策
+## 13. 已确认的设计决策
 
-1. 是否确认 Task 1.14 P0 仅支持与现有引擎一致的 Spot Long Planner；Short/杠杆不进入本轮。
-2. 规划手续费应采用用户选择的 Maker/Taker 假设，还是默认使用更保守的 `max(maker,taker)`；无实际 Fee Schedule 时一律不可确认。
-3. 是否确认“账户有效资产”沿用有效 Bid 估值，任一相关资产无法估值时风险比例校验为 UNAVAILABLE，而不是只用 USDT 余额。
-4. 是否确认一个 Journal 只对应一个主品种，但可关联多个同品种 Order / Fill。
-5. 是否确认一个 Order 最多关联一个 Journal，以避免样本和盈亏重复归因。
-6. 是否确认 Fill 通过关联 Order 自动派生，不建立可任意编辑的独立 Fill Link。
-7. 是否接受日志级已实现盈亏采用“完整账户历史重放 + 归因关联卖出 Fill 的 realized PnL 增量”，且 Task 1.14 不提供 Journal 未实现盈亏。
-8. 是否确认只有闭合关联成交、无活动订单且完成复盘进入 REVIEWED 时才计为完整交易样本。
-9. 是否确认所有 Journal 和 Plan Revision 均不硬删除，以保留亏损、违规、取消和不完整样本。
-10. 是否采用 Journal `version` 乐观锁、显式保存和不可变 Plan Revision，而非自动覆盖。
-11. 是否确认 Task 1.14 不添加无 FK 的 Experiment / Strategy Version 占位列，由 Task 1.16 在目标表存在后一次性增加 nullable FK。
-12. Experiment 001 的趋势判断及反弹确认信号继续保持 Pending，不进入本次自动校验。
+以下事项已于 2026-11-27 全部由项目负责人确认，Task 1.14.1 Gate 已关闭：
 
-以上事项确认前不得创建正式 Migration 或业务实现。
+1. P0 仅支持 Spot Long；不支持 Short、杠杆、合约和自动策略执行。
+2. 权威风险校验默认使用实际 Fee Schedule 的 `max(maker,taker)`；其他费率场景只供参考，未知费率为 UNAVAILABLE。当前引擎手续费按 quote asset 结算，未来其他扣费资产必须显式建模。
+3. 有效资产使用当前有效 Bid 估值，包含可用和冻结资产；任一非零资产不可估值时风险比例为 UNAVAILABLE。100 USDT 仓位上限是不含手续费的名义金额。
+4. 一个 Journal 对应一个主品种，可关联多个同品种 Order 及其派生 Fill；禁止跨环境、账户或品种。
+5. 一个 Order 最多关联一个 Journal，由数据库唯一约束保证；暂不拆分成交数量。
+6. Fill 通过 Order 自动派生，不建立可编辑 Fill Link。
+7. Journal 已实现盈亏采用完整账户历史重放并归因关联卖出 Fill 的 realized PnL 增量；复用移动平均成本，不重复扣费，不提供不可靠的 Journal 未实现盈亏，多币种分别统计。
+8. `CLOSED` 表示客观交易完成，`REVIEWED` 表示研究复盘完成；已平仓和违规交易不得因复盘状态或违规而从客观结果排除。Experiment 001 需要 30 笔客观完整交易全部复盘。
+9. Journal 和 Plan Revision 禁止硬删除；允许取消及归档，已完成交易归属变更必须审计，不能静默改善统计。
+10. 采用 `version` 乐观锁、显式保存、不可变 Revision、首次确认快照及重要修改原因；保存时重新读取 Context 做权威校验。
+11. Task 1.14 不建立无 FK 的 Experiment / Strategy Version 占位列；Task 1.16 再以正式 Migration 增加关联。
+12. Experiment 001 的趋势、支撑和反弹信号保持 Pending，不实现为自动信号。
+13. Order 创建成功但 Link 失败时使用独立幂等关联恢复，不得重复下单；所有关键关联和状态转换具备并发控制。
+14. 交易前 Checklist 与交易后纪律评估分离；READY 不代表入场信号成立，计划 SL/TP 不代表自动执行。
+15. 风险校验不得阻止撤单、减仓和平仓；Journal 写入不得改变交易引擎 `state_version`，也不得改变现有金融结算或撮合规则。
