@@ -7,6 +7,8 @@ import { MarketsPage } from './features/market/MarketsPage'
 import { SettingsPage } from './features/settings/SettingsPage'
 import { OverviewPage } from './features/account/OverviewPage'
 import { TradingWorkspace } from './features/workspace/TradingWorkspace'
+import { JournalDetailPage } from './features/journal/JournalDetailPage'
+import { JournalListPage } from './features/journal/JournalListPage'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -27,6 +29,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/trading" element={<TradingWorkspace />} />
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/markets" element={<MarketsPage />} />
+            <Route path="/journal" element={<JournalListPage />} />
+            <Route path="/journal/:journalId" element={<JournalDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>

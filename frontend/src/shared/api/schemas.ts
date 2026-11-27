@@ -256,6 +256,67 @@ export type BalancesTopicPayload = { asset: string; available: string; locked: s
 export type ExecutionsTopicPayload = z.infer<typeof ExecutionRecord>
 export type PositionsTopicPayload = z.infer<typeof Position>
 
+export const JournalStatus = z.enum([
+  'DRAFT',
+  'READY',
+  'ACTIVE',
+  'CLOSED',
+  'REVIEWED',
+  'CANCELLED',
+])
+
+export const PlanRevision = z.object({
+  plan_revision_id: z.string(),
+  journal_id: z.string(),
+  revision_number: z.number(),
+  entry_price: DecimalString,
+  planned_position_notional: DecimalString,
+  stop_loss_price: DecimalString,
+  take_profit_price: DecimalString,
+  max_position_notional: DecimalString,
+  max_account_risk_rate: DecimalString,
+  min_reward_risk_ratio: DecimalString,
+  validation_status: z.enum(['PASS', 'FAIL', 'UNAVAILABLE']),
+  calculator_version: z.string(),
+  revision_reason: z.string(),
+  is_initial_confirmed: z.boolean(),
+  created_ts_ms: z.number(),
+  confirmed_ts_ms: z.number().nullable().optional(),
+  context_json: z.record(z.string(), z.unknown()),
+  calculation_json: z.record(z.string(), z.unknown()),
+  validation_results_json: z.record(z.string(), z.unknown()),
+})
+
+export const TradingJournal = z.object({
+  journal_id: z.string(),
+  environment_id: z.string(),
+  account_id: z.string(),
+  instrument_id: z.string(),
+  title: z.string(),
+  status: JournalStatus,
+  version: z.number(),
+  current_plan_revision_id: z.string().nullable().optional(),
+  timeframe: z.string().nullable().optional(),
+  market_trend: z.string().nullable().optional(),
+  trade_reason: z.string().nullable().optional(),
+  entry_conditions: z.string().nullable().optional(),
+  execution_notes: z.string().nullable().optional(),
+  review_summary: z.string().nullable().optional(),
+  archive_reason: z.string().nullable().optional(),
+  created_ts_ms: z.number(),
+  updated_ts_ms: z.number(),
+  ready_ts_ms: z.number().nullable().optional(),
+  activated_ts_ms: z.number().nullable().optional(),
+  closed_ts_ms: z.number().nullable().optional(),
+  reviewed_ts_ms: z.number().nullable().optional(),
+  cancelled_ts_ms: z.number().nullable().optional(),
+  plan_revisions: z.array(PlanRevision).optional(),
+})
+
+export type JournalStatus = z.infer<typeof JournalStatus>
+export type PlanRevision = z.infer<typeof PlanRevision>
+export type TradingJournal = z.infer<typeof TradingJournal>
+
 // ---------------------------------------------------------------------------
 // WebSocket envelope (docs/10 §3)
 // ---------------------------------------------------------------------------

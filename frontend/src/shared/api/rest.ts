@@ -9,6 +9,7 @@ import type {
   Position,
   Snapshot,
   TopicFilter,
+  TradingJournal,
 } from './schemas'
 import {
   ApiErrorEnvelope,
@@ -21,6 +22,7 @@ import {
   PaperOrder as PaperOrderSchema,
   Position as PositionSchema,
   Snapshot as SnapshotSchema,
+  TradingJournal as TradingJournalSchema,
 } from './schemas'
 
 /** Error parsed from the docs/09 §6 error envelope. */
@@ -56,6 +58,15 @@ export type OrderCreateRequest = {
   max_quote_budget?: string
   latency_preset?: 'IDEAL' | 'FAST' | 'NORMAL' | 'MEDIUM' | 'SLOW' | 'HIGH' | 'CUSTOM'
   custom_latency_ms?: number
+}
+
+export type JournalCreateRequest = {
+  title: string
+  instrument_id: string
+  timeframe?: string
+  market_trend?: string
+  trade_reason?: string
+  entry_conditions?: string
 }
 
 type Query = Record<string, string | number | undefined>
@@ -226,6 +237,45 @@ export class RestClient {
       `/api/v1/market/candles${queryString({ instrument_id: instrumentId, interval, ...params })}`,
     )
     return CandleHistorySchema.parse(body)
+  }
+
+  async createJournal(
+    environmentId: string,
+    accountId: string,
+    request: JournalCreateRequest,
+  ): Promise<TradingJournal> {
+    const body = await this.request(
+      'POST',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals`,
+      request,
+      201,
+      this.newIdempotencyKey(),
+    )
+    return TradingJournalSchema.parse(body)
+  }
+
+  async listJournals(
+    environmentId: string,
+    accountId: string,
+    filters: { limit?: number; status?: string; instrument_id?: string } = {},
+  ): Promise<TradingJournal[]> {
+    const body = await this.request(
+      'GET',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals${queryString(filters)}`,
+    )
+    return parseArray(TradingJournalSchema, body)
+  }
+
+  async getJournal(
+    environmentId: string,
+    accountId: string,
+    journalId: string,
+  ): Promise<TradingJournal> {
+    const body = await this.request(
+      'GET',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}`,
+    )
+    return TradingJournalSchema.parse(body)
   }
 
   private async request(

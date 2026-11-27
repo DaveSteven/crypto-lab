@@ -123,6 +123,17 @@ export function AppLayout() {
             >
               市场
             </NavLink>
+            <NavLink
+              to="/journal"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-[6px] px-3 py-1.5 text-sm transition-colors duration-150',
+                  isActive ? 'bg-elevated font-medium text-brand' : 'text-ink-secondary hover:bg-elevated/60',
+                )
+              }
+            >
+              日志
+            </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <EnvironmentSelector />

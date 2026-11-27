@@ -470,7 +470,7 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 |---|---|---|
 | 1.14.1 | Architecture & Design | Completed；本文档 V0.2、Roadmap、负责人决策 |
 | 1.14.2 | Persistence & REST API | Completed；Journal/Revision Migration、Planner Context/Preview、Fee/Rules 读取、Service、Schema、OpenAPI、PostgreSQL 测试 |
-| 1.14.3 | Journal List & Detail | `/journal`、详情页、查询与状态展示 |
+| 1.14.3 | Journal List & Detail | Completed；`/journal`、Draft 创建、详情页、查询、状态及只读 Revision 展示 |
 | 1.14.4 | Trade Plan Editor | P0 Planner、实时 Decimal 预览、权威校验、首次快照、Revision、带入 Order Entry |
 | 1.14.5 | Order & Fill Association | 订单关联、派生 Fill、日志级指标与口径说明 |
 | 1.14.6 | Emotion & Trading Discipline | 情绪时间线、Checklist 快照与完成规则 |
@@ -513,3 +513,16 @@ Task 1.14.2 已于 2026-11-27 完成，范围严格限定在 PostgreSQL 与后�
 - Order/Fill Link、Emotion、Checklist、Review UI 与 Journal 前端未提前实现。
 
 验收结果：Ruff 全量通过；独立 `crypto_lab_test` PostgreSQL 数据库完整后端回归为 360 passed。正式本地模拟数据库未用于测试或清理。
+
+## 15. Task 1.14.3 实施记录
+
+Task 1.14.3 已于 2026-11-27 完成：
+
+- 顶部导航新增“日志”，并增加 `/journal` 与 `/journal/{journal_id}` 路由。
+- 列表按当前环境和账户查询，支持状态及主品种筛选，不跨账户缓存数据。
+- 支持创建基础 Draft，仅收集标题、主品种和观察周期；不提前暴露 Planner 输入。
+- 详情展示市场分析、当前状态、只读计划值、不可变 Revision 历史及执行/复盘占位状态。
+- 计划计算结果始终标记为预计值；无 Order/Fill 关联时不推测成交、盈亏或统计。
+- REST 响应使用 Zod 校验，Decimal 保持字符串，不以显示值参与金融计算。
+
+前端验证：Vitest 140 passed；TypeScript/Vite build 通过；Oxlint 无新增告警（保留既有 Chart effect warning）。Docker Compose 已重建，Migration、Backend 与 Frontend 健康，Nginx 代理下 Journal 列表 API 实际返回成功。浏览器控制服务当时不可用，因此本子任务尚缺真实浏览器截图，不能将视觉截图验收描述为已完成。
