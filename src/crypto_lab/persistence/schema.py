@@ -362,3 +362,35 @@ Index(
     journal_audit_events.c.created_ts_ms,
     journal_audit_events.c.audit_event_id,
 )
+
+journal_order_links = Table(
+    "journal_order_links",
+    metadata,
+    Column(
+        "journal_id",
+        ForeignKey("trading_journals.journal_id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column(
+        "order_id",
+        ForeignKey("paper_orders.order_id", ondelete="RESTRICT"),
+        primary_key=True,
+        unique=True,
+    ),
+    Column("environment_id", String(64), nullable=False),
+    Column("account_id", String(64), nullable=False),
+    Column("linked_ts_ms", BigInteger, nullable=False),
+    Column("note", String),
+    Column("link_sequence", BigInteger, nullable=False),
+    UniqueConstraint("journal_id", "link_sequence", name="uq_journal_link_sequence"),
+    ForeignKeyConstraint(
+        ("environment_id", "account_id"),
+        ("paper_accounts.environment_id", "paper_accounts.account_id"),
+    ),
+    CheckConstraint("link_sequence > 0", name="ck_journal_link_sequence_positive"),
+)
+Index(
+    "ix_journal_order_account",
+    journal_order_links.c.environment_id,
+    journal_order_links.c.account_id,
+)

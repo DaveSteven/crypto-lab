@@ -141,6 +141,7 @@ describe('OrderEntryPanel', () => {
       quantity: '0.01',
       limitPrice: '60000.1',
       journalId: 'journal-123456',
+      journalVersion: 3,
     })
     render(<OrderEntryPanel />)
     expect(await screen.findByDisplayValue('0.01')).toBeVisible()
@@ -149,6 +150,47 @@ describe('OrderEntryPanel', () => {
     expect(screen.getByRole('button', { name: '预览买入订单' })).toBeEnabled()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(useOrderDraftStore.getState().plannedOrder).toBeNull()
+  })
+
+  test('a failed Journal link retries only the association and never resubmits the order', async () => {
+    const user = userEvent.setup()
+    let orderCalls = 0
+    let linkCalls = 0
+    useOrderDraftStore.getState().applyPlan({
+      instrumentId: 'okx:SPOT:BTC/USDT',
+      quantity: '0.01',
+      limitPrice: '60000.1',
+      journalId: 'journal-123456',
+      journalVersion: 3,
+    })
+    server.use(
+      http.post('*/api/v1/environments/env-1/orders', () => {
+        orderCalls += 1
+        return HttpResponse.json({
+          order_id: 'order-from-plan', account_id: 'a-1', instrument_id: 'okx:SPOT:BTC/USDT',
+          side: 'BUY', order_type: 'LIMIT', quantity: '0.01', limit_price: '60000.1',
+          reference_price: '60000.1', reserved_asset: 'USDT', reserved_amount: '601',
+          filled_quantity: '0', cumulative_quote_amount: '0', cumulative_fee: '0',
+          reserved_fee_rate: '0.001', status: 'PENDING_EXECUTION', submitted_ts_ms: 1_000,
+          order_sequence: 1, created_ts_ms: 1_000, updated_ts_ms: 1_000,
+        }, { status: 201 })
+      }),
+      http.put('*/journals/journal-123456/orders/order-from-plan', () => {
+        linkCalls += 1
+        if (linkCalls === 1) return HttpResponse.json({ error: { code: 'TEMPORARY', message: 'retry', details: {}, request_id: 'r' } }, { status: 503 })
+        return HttpResponse.json({ journal_version: 4, journal_status: 'ACTIVE' })
+      }),
+    )
+    render(<OrderEntryPanel />)
+    await screen.findByDisplayValue('0.01')
+    await user.click(screen.getByRole('button', { name: '预览买入订单' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('button', { name: '仅重试日志关联' })).toBeVisible()
+    expect(orderCalls).toBe(1)
+    await user.click(screen.getByRole('button', { name: '仅重试日志关联' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '仅重试日志关联' })).toBeNull())
+    expect(orderCalls).toBe(1)
+    expect(linkCalls).toBe(2)
   })
 
   test('confirmation dialog previews the order and nothing is sent until confirmed', async () => {

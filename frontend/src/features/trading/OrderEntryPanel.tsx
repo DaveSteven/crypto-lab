@@ -50,6 +50,8 @@ export function OrderEntryPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [pending, setPending] = useState<OrderFormValues | null>(null)
+  const [sourceJournal, setSourceJournal] = useState<{ journalId: string; journalVersion: number } | null>(null)
+  const [pendingJournalLink, setPendingJournalLink] = useState<{ journalId: string; journalVersion: number; orderId: string } | null>(null)
   const [inputUnit, setInputUnit] = useState<'base' | 'quote'>('base')
   const balances = useTradingStore((state) => state.balances)
   const ticker = useMarketStore((state) => state.tickers[INSTRUMENT])
@@ -91,6 +93,7 @@ export function OrderEntryPanel() {
           limit_price: plan.limitPrice,
           latency_preset: 'NORMAL',
         })
+        setSourceJournal({ journalId: plan.journalId, journalVersion: plan.journalVersion })
         setMessage(`已带入交易计划 ${plan.journalId.slice(0, 8)}…，请检查后预览订单。`)
         useOrderDraftStore.getState().clearPlan()
       }
@@ -152,9 +155,26 @@ export function OrderEntryPanel() {
     try {
       const request = { ...toOrderCreateRequest(submitted), account_id: session.accountId }
       const order = await rest.createOrder(session.environmentId, request)
-      setMessage(
-        `订单已提交：${order.order_id.slice(0, 8)}…（状态 ${order.status}）。成交价格与结果由模拟撮合决定。`,
-      )
+      let resultMessage = `订单已提交：${order.order_id.slice(0, 8)}…（状态 ${order.status}）。成交价格与结果由模拟撮合决定。`
+      if (sourceJournal !== null) {
+        try {
+          await rest.linkJournalOrder(
+            session.environmentId,
+            session.accountId,
+            sourceJournal.journalId,
+            order.order_id,
+            sourceJournal.journalVersion,
+            '从已确认交易计划创建',
+          )
+          resultMessage += ' 已关联至交易日志。'
+          setPendingJournalLink(null)
+        } catch {
+          setPendingJournalLink({ ...sourceJournal, orderId: order.order_id })
+          resultMessage += ' 订单已创建，但日志关联失败；请仅重试关联，不要重复下单。'
+        }
+      }
+      setMessage(resultMessage)
+      setSourceJournal(null)
       setValues({
         ...EMPTY_FORM,
         instrument_id: submitted.instrument_id,
@@ -171,6 +191,28 @@ export function OrderEntryPanel() {
     } finally {
       setSubmitting(false)
       setPending(null)
+    }
+  }
+
+  async function retryJournalLink() {
+    if (pendingJournalLink === null || session === null || submitting) return
+    setSubmitting(true)
+    try {
+      await rest.linkJournalOrder(
+        session.environmentId,
+        session.accountId,
+        pendingJournalLink.journalId,
+        pendingJournalLink.orderId,
+        pendingJournalLink.journalVersion,
+        '恢复失败的订单关联',
+      )
+      setMessage(`订单 ${pendingJournalLink.orderId.slice(0, 8)}… 已关联至交易日志。`)
+      setPendingJournalLink(null)
+    } catch (reason) {
+      const detail = reason instanceof ApiError ? `${reason.code}：${reason.message}` : reason instanceof Error ? reason.message : String(reason)
+      setMessage(`日志关联仍未完成（${detail}）。订单已存在，不会重复提交。`)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -373,6 +415,11 @@ export function OrderEntryPanel() {
           <p role="status" className="rounded-[6px] bg-info/10 px-2 py-1.5 text-xs text-info">
             {message}
           </p>
+        )}
+        {pendingJournalLink !== null && (
+          <Button type="button" variant="outline" onClick={() => void retryJournalLink()} disabled={submitting}>
+            仅重试日志关联
+          </Button>
         )}
 
         <div className="rounded-[6px] border border-line bg-canvas/40 p-2 text-[11px]">

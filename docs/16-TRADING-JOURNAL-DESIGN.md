@@ -4,7 +4,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.2 |
+| 文档版本 | V0.3 |
 | 对应任务 | Task 1.14.1 — Architecture & Design |
 | 状态 | Accepted |
 | 日期 | 2026-11-27 |
@@ -472,7 +472,7 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 | 1.14.2 | Persistence & REST API | Completed；Journal/Revision Migration、Planner Context/Preview、Fee/Rules 读取、Service、Schema、OpenAPI、PostgreSQL 测试 |
 | 1.14.3 | Journal List & Detail | Completed；`/journal`、Draft 创建、详情页、查询、状态及只读 Revision 展示 |
 | 1.14.4 | Trade Plan Editor | Completed；P0 Planner、实时 Decimal 预览、权威校验、首次快照、Revision、带入 Order Entry |
-| 1.14.5 | Order & Fill Association | 订单关联、派生 Fill、日志级指标与口径说明 |
+| 1.14.5 | Order & Fill Association | Completed；唯一订单归属、派生 Fill、完整历史重放指标、幂等恢复与 UI |
 | 1.14.6 | Emotion & Trading Discipline | 情绪时间线、Checklist 快照与完成规则 |
 | 1.14.7 | Trade Review | 复盘、完成判定、归档和学习摘要 |
 | 1.14.8 | Integration & Acceptance | E2E、桌面矩阵、Docker 持久化、文档及验收报告 |
@@ -540,3 +540,18 @@ Task 1.14.4 已于 2026-11-27 完成：
 - SL/TP 继续仅作为计划记录，不创建自动止损止盈订单；Order / Fill 关联留给 Task 1.14.5。
 
 验证结果：Vitest 145 passed；TypeScript/Vite build 通过；Oxlint 无新增告警（仅保留既有 Chart effect warning）；Docker Compose 重建及健康检查通过；真实 Planner Context REST 验证通过。当前真实环境当时没有有效订单簿，接口正确返回 `market_status=UNAVAILABLE`，未伪装成可确认行情。浏览器控制未获 Chrome 权限，因此真实浏览器截图仍未完成。
+
+## 17. Task 1.14.5 实施记录
+
+Task 1.14.5 已于 2026-11-27 完成，范围限定为 Order / Fill Association：
+
+- Alembic head 更新为 `0005_journal_order_links`。`journal_order_links` 以 `order_id` 唯一约束保证一个订单至多属于一个 Journal，冗余保存环境/账户范围并以账户复合 FK 约束；应用层在行锁事务内校验 Journal、Order 的环境、账户及品种一致性。
+- 关联仅允许 READY / ACTIVE Journal；首次关联使 READY 进入 ACTIVE。关联与解除关联均锁定 Journal、校验 `journal_version`、使用独立 Idempotency-Key，并写入追加式审计事件。
+- 解除关联强制记录原因，只删除主观归属；Order、Execution、Ledger、Portfolio 与交易引擎 `state_version` 均不改变。
+- Fill 不建立可编辑关联表；详情接口按关联 Order 自动派生全部 Execution，后续部分成交自然纳入。
+- 日志指标重放当前账户完整 Fill History，复用移动平均成本法，只累计关联 SELL Execution 产生的 realized PnL 增量；关联成交手续费按 `fee_asset` 分币种汇总，不重复扣费，也不提供不可靠的 Journal 未实现盈亏。
+- 客观完整交易要求至少一个关联 Execution、关联基础资产净数量精确归零且无活动关联订单；不使用浮点容差掩盖残余仓位。
+- 日志详情可从当前账户真实订单中建立/解除关联，展示派生成交、归因口径、费用及不完整原因。由计划创建订单后自动尝试关联；若关联失败，保留原 `order_id` 并仅重试关联，绝不重复提交订单。
+- 该实现没有增加 Experiment / Strategy Version 占位字段，也没有实现 Emotion、Checklist 或 Trade Review。
+
+验证结果：隔离 `crypto_lab_test` 完成 `0005 → 0004 → 0005` 迁移往返；后端完整回归 364 passed；前端 Vitest 146 passed，TypeScript/Vite build 通过，Oxlint 仅保留既有 Chart effect warning。正式 Docker Compose 已重建并健康，正式数据库仅执行向前 Migration，未清理或修改既有模拟账户事实。浏览器控制服务本轮未提供，因此未将真实浏览器截图列为已完成证据。

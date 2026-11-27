@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "trading_journals",
     "trade_plan_revisions",
     "journal_audit_events",
+    "journal_order_links",
 }
 
 

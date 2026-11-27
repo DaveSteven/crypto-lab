@@ -287,6 +287,30 @@ export const PlanRevision = z.object({
   validation_results_json: z.record(z.string(), z.unknown()),
 })
 
+export const JournalOrderLink = z.object({
+  journal_id: z.string(),
+  order_id: z.string(),
+  environment_id: z.string(),
+  account_id: z.string(),
+  linked_ts_ms: z.number(),
+  note: z.string().nullable().optional(),
+  link_sequence: z.number(),
+})
+
+export const JournalMetrics = z.object({
+  status: z.enum(['AVAILABLE', 'UNAVAILABLE']),
+  reason: z.string().optional(),
+  attribution_scope: z.string(),
+  cost_method: z.string().optional(),
+  linked_order_count: z.number().optional(),
+  linked_execution_count: z.number().optional(),
+  net_base_quantity: DecimalString.optional(),
+  fees_by_asset: z.record(z.string(), DecimalString).optional(),
+  attributed_realized_pnl_by_currency: z.record(z.string(), DecimalString).optional(),
+  trade_complete: z.boolean().optional(),
+  incomplete_reasons: z.array(z.string()).optional(),
+})
+
 export const TradingJournal = z.object({
   journal_id: z.string(),
   environment_id: z.string(),
@@ -311,10 +335,16 @@ export const TradingJournal = z.object({
   reviewed_ts_ms: z.number().nullable().optional(),
   cancelled_ts_ms: z.number().nullable().optional(),
   plan_revisions: z.array(PlanRevision).optional(),
+  order_links: z.array(JournalOrderLink).optional(),
+  linked_orders: z.array(PaperOrder).optional(),
+  linked_executions: z.array(ExecutionRecord).optional(),
+  metrics: JournalMetrics.optional(),
 })
 
 export type JournalStatus = z.infer<typeof JournalStatus>
 export type PlanRevision = z.infer<typeof PlanRevision>
+export type JournalOrderLink = z.infer<typeof JournalOrderLink>
+export type JournalMetrics = z.infer<typeof JournalMetrics>
 export type TradingJournal = z.infer<typeof TradingJournal>
 
 const PlannerValidation = z.object({

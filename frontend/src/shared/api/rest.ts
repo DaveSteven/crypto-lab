@@ -355,6 +355,42 @@ export class RestClient {
     return TradingJournalSchema.parse(body)
   }
 
+  async linkJournalOrder(
+    environmentId: string,
+    accountId: string,
+    journalId: string,
+    orderId: string,
+    journalVersion: number,
+    note?: string,
+  ): Promise<{ journal_version: number; journal_status: string }> {
+    const body = await this.request(
+      'PUT',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}/orders/${orderId}`,
+      { journal_version: journalVersion, ...(note ? { note } : {}) },
+      200,
+      this.newIdempotencyKey(),
+    )
+    return z.object({ journal_version: z.number(), journal_status: z.string() }).parse(body)
+  }
+
+  async unlinkJournalOrder(
+    environmentId: string,
+    accountId: string,
+    journalId: string,
+    orderId: string,
+    journalVersion: number,
+    reason: string,
+  ): Promise<{ journal_version: number }> {
+    const body = await this.request(
+      'DELETE',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}/orders/${orderId}`,
+      { journal_version: journalVersion, reason },
+      200,
+      this.newIdempotencyKey(),
+    )
+    return z.object({ journal_version: z.number() }).parse(body)
+  }
+
   private async request(
     method: string,
     path: string,

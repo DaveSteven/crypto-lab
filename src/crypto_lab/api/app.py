@@ -29,6 +29,8 @@ from crypto_lab.api.schemas import (
     AccountCreate,
     EnvironmentCreate,
     JournalCreate,
+    JournalOrderLink,
+    JournalOrderUnlink,
     JournalPatch,
     JournalTransition,
     OrderCreate,
@@ -426,6 +428,40 @@ def create_app(
             environment_id, account_id, journal_id, "CANCELLED", body, key
         )
         return JSONResponse(result, status_code=status)
+
+    @app.put(f"{journal_base}/{{journal_id}}/orders/{{order_id}}")
+    def link_journal_order(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        order_id: str,
+        body: JournalOrderLink,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.link_journal_order(
+            environment_id, account_id, journal_id, order_id, body, key
+        )
+        return JSONResponse(result, status_code=status)
+
+    @app.delete(f"{journal_base}/{{journal_id}}/orders/{{order_id}}")
+    def unlink_journal_order(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        order_id: str,
+        body: JournalOrderUnlink,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.unlink_journal_order(
+            environment_id, account_id, journal_id, order_id, body, key
+        )
+        return JSONResponse(result, status_code=status)
+
+    @app.get(f"{journal_base}/{{journal_id}}/metrics")
+    def journal_metrics(
+        environment_id: str, account_id: str, journal_id: str
+    ) -> dict[str, Any]:
+        return service.journal_metrics(environment_id, account_id, journal_id)
 
     @app.get(f"{journal_base}/trade-planner/context")
     def planner_context(

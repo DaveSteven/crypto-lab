@@ -7,6 +7,7 @@ import { formatAmount, formatPercentage, formatPrice, instrumentLabel } from '@/
 import { Badge, Button, EmptyState, ErrorState, PageContainer, PageHeader, Panel } from '@/shared/ui'
 import { formatJournalDate, JOURNAL_STATUS } from './journalDisplay'
 import { TradePlanEditor } from './TradePlanEditor'
+import { JournalAssociations } from './JournalAssociations'
 import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
 import { useInstrumentStore } from '@/features/market/instrumentStore'
 
@@ -44,6 +45,7 @@ export function JournalDetailPage() {
       quantity,
       limitPrice: confirmed.entry_price,
       journalId: journal.journal_id,
+      journalVersion: journal.version,
     })
     navigate('/trading')
   }
@@ -62,7 +64,7 @@ export function JournalDetailPage() {
         <div className="space-y-4">
           <Panel title="日志信息" bodyClassName="space-y-3 p-4 text-[13px]"><Row label="状态" value={status.label} /><Row label="主交易品种" value={instrumentLabel(journal.instrument_id)} /><Row label="Journal Version" value={String(journal.version)} /><Row label="最后更新" value={formatJournalDate(journal.updated_ts_ms)} /></Panel>
           <Panel title="计划历史" bodyClassName="p-3">{revisions.length === 0 ? <EmptyState message="暂无 Plan Revision。" /> : <ol className="space-y-2">{[...revisions].reverse().map((revision) => <li key={revision.plan_revision_id} className="rounded-[6px] border border-line p-3"><div className="flex justify-between"><span className="font-medium text-ink">Revision {revision.revision_number}{revision.is_initial_confirmed ? ' · 首次确认快照' : ''}</span><span className="numeric text-[11px] text-ink-muted">{formatJournalDate(revision.created_ts_ms)}</span></div><p className="mt-1 text-[12px] text-ink-secondary">{revision.revision_reason}</p></li>)}</ol>}</Panel>
-          <Panel title="关联交易" bodyClassName="p-3"><EmptyState message="Order / Fill 关联将在 Task 1.14.5 实现。本页不会推测或伪造成交结果。" /></Panel>
+          <Panel title="关联交易" bodyClassName="p-3"><JournalAssociations journal={journal} onUpdated={() => void query.refetch()} /></Panel>
         </div>
       </div>
     </PageContainer>

@@ -8,10 +8,18 @@ interface OrderDraftState {
   pickedPrice: string | null
   pickNonce: number
   pickPrice: (price: string) => void
-  plannedOrder: { instrumentId: string; quantity: string; limitPrice: string; journalId: string } | null
+  plannedOrder: PlannedOrder | null
   planNonce: number
-  applyPlan: (plan: { instrumentId: string; quantity: string; limitPrice: string; journalId: string }) => void
+  applyPlan: (plan: PlannedOrder) => void
   clearPlan: () => void
+}
+
+interface PlannedOrder {
+  instrumentId: string
+  quantity: string
+  limitPrice: string
+  journalId: string
+  journalVersion: number
 }
 
 export const useOrderDraftStore = create<OrderDraftState>()((set) => ({

@@ -172,3 +172,13 @@ class TradePlannerPreview(TradePlanInput):
 class PlanRevisionCreate(TradePlanInput):
     journal_version: int = Field(ge=1)
     revision_reason: str = Field(min_length=1, max_length=500)
+
+
+class JournalOrderLink(ApiModel):
+    journal_version: int = Field(ge=1)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class JournalOrderUnlink(ApiModel):
+    journal_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)

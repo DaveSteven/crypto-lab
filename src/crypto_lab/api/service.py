@@ -11,15 +11,18 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel
-from sqlalchemy import Select, func, select, text, update
+from sqlalchemy import Select, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from crypto_lab.api.errors import ApplicationError
 from crypto_lab.api.schemas import (
     AccountCreate,
     EnvironmentCreate,
     JournalCreate,
+    JournalOrderLink,
+    JournalOrderUnlink,
     JournalPatch,
     JournalTransition,
     OrderCreate,
@@ -733,7 +736,242 @@ class ApplicationService:
                 .where(schema.trade_plan_revisions.c.journal_id == journal_id)
                 .order_by(schema.trade_plan_revisions.c.revision_number)
             ).mappings()
-            return _row(journal) | {"plan_revisions": [_row(row) for row in revisions]}
+            links = connection.execute(
+                select(schema.journal_order_links)
+                .where(schema.journal_order_links.c.journal_id == journal_id)
+                .order_by(schema.journal_order_links.c.link_sequence)
+            ).mappings()
+            linked_orders = connection.execute(
+                select(schema.paper_orders)
+                .join(
+                    schema.journal_order_links,
+                    schema.journal_order_links.c.order_id == schema.paper_orders.c.order_id,
+                )
+                .where(schema.journal_order_links.c.journal_id == journal_id)
+                .order_by(schema.paper_orders.c.order_sequence)
+            ).mappings()
+            linked_executions = connection.execute(
+                select(schema.executions)
+                .join(
+                    schema.journal_order_links,
+                    schema.journal_order_links.c.order_id == schema.executions.c.order_id,
+                )
+                .where(schema.journal_order_links.c.journal_id == journal_id)
+                .order_by(schema.executions.c.execution_sequence)
+            ).mappings()
+            return _row(journal) | {
+                "plan_revisions": [_row(row) for row in revisions],
+                "order_links": [_row(row) for row in links],
+                "linked_orders": [_row(row) for row in linked_orders],
+                "linked_executions": [_row(row) for row in linked_executions],
+                "metrics": self._journal_metrics(connection, journal),
+            }
+
+    def link_journal_order(
+        self,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        order_id: str,
+        request: JournalOrderLink,
+        idempotency_key: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload = request.model_dump(mode="json") | {"order_id": order_id}
+        scope = f"journal-order-link:{journal_id}:{order_id}"
+        try:
+            with self.uow.bootstrap() as store:
+                replay = self._idempotent_replay(
+                    store, environment_id, scope, idempotency_key, payload
+                )
+                if replay:
+                    return replay
+                journal = self._journal_row(
+                    store.session, environment_id, account_id, journal_id, for_update=True
+                )
+                existing = store.session.execute(
+                    select(schema.journal_order_links).where(
+                        schema.journal_order_links.c.order_id == order_id
+                    )
+                ).mappings().one_or_none()
+                if existing is not None and existing["journal_id"] == journal_id:
+                    response = _row(existing) | {
+                        "journal_version": journal["version"],
+                        "journal_status": journal["status"],
+                    }
+                    self._record_idempotency(
+                        store,
+                        environment_id,
+                        scope,
+                        idempotency_key,
+                        payload,
+                        200,
+                        response,
+                    )
+                    return 200, response
+                self._require_journal_version(journal, request.journal_version)
+                if journal["status"] not in {"READY", "ACTIVE"}:
+                    raise ApplicationError(
+                        "INVALID_JOURNAL_STATE",
+                        "orders can only be linked to READY or ACTIVE journals",
+                        status_code=409,
+                    )
+                order = store.session.execute(
+                    select(schema.paper_orders).where(schema.paper_orders.c.order_id == order_id)
+                ).mappings().one_or_none()
+                if order is None:
+                    raise ApplicationError(
+                        "ORDER_NOT_FOUND", "paper order was not found", status_code=404
+                    )
+                if order["environment_id"] != environment_id or order["account_id"] != account_id:
+                    raise ApplicationError(
+                        "ORDER_SCOPE_MISMATCH",
+                        "order does not belong to the Journal environment and account",
+                        status_code=409,
+                    )
+                if order["instrument_id"] != journal["instrument_id"]:
+                    raise ApplicationError(
+                        "INSTRUMENT_MISMATCH",
+                        "order instrument does not match the Journal instrument",
+                        status_code=409,
+                    )
+                if existing is not None:
+                    raise ApplicationError(
+                        "ORDER_ALREADY_LINKED",
+                        "order is already linked to a Journal",
+                        status_code=409,
+                        details={"journal_id": existing["journal_id"]},
+                    )
+                sequence = int(
+                    store.session.execute(
+                        select(
+                            func.coalesce(
+                                func.max(schema.journal_order_links.c.link_sequence), 0
+                            )
+                        )
+                        .where(schema.journal_order_links.c.journal_id == journal_id)
+                    ).scalar_one()
+                ) + 1
+                now = self.now_ms()
+                link = {
+                    "journal_id": journal_id,
+                    "order_id": order_id,
+                    "environment_id": environment_id,
+                    "account_id": account_id,
+                    "linked_ts_ms": now,
+                    "note": request.note,
+                    "link_sequence": sequence,
+                }
+                store.session.execute(schema.journal_order_links.insert().values(**link))
+                next_version = request.journal_version + 1
+                values: dict[str, Any] = {"version": next_version, "updated_ts_ms": now}
+                if journal["status"] == "READY":
+                    values |= {"status": "ACTIVE", "activated_ts_ms": now}
+                store.session.execute(
+                    update(schema.trading_journals)
+                    .where(schema.trading_journals.c.journal_id == journal_id)
+                    .values(**values)
+                )
+                self._audit_journal(
+                    store,
+                    journal_id,
+                    "ORDER_LINKED",
+                    next_version,
+                    now,
+                    from_status=journal["status"],
+                    to_status=values.get("status", journal["status"]),
+                    reason=request.note,
+                    details={"order_id": order_id},
+                )
+                response = _json_value(link) | {
+                    "journal_version": next_version,
+                    "journal_status": values.get("status", journal["status"]),
+                }
+                self._record_idempotency(
+                    store, environment_id, scope, idempotency_key, payload, 200, response
+                )
+                return 200, response
+        except IntegrityError as exc:
+            raise ApplicationError(
+                "ORDER_ALREADY_LINKED",
+                "order is already linked to a Journal",
+                status_code=409,
+            ) from exc
+
+    def unlink_journal_order(
+        self,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        order_id: str,
+        request: JournalOrderUnlink,
+        idempotency_key: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload = request.model_dump(mode="json") | {"order_id": order_id}
+        scope = f"journal-order-unlink:{journal_id}:{order_id}"
+        with self.uow.bootstrap() as store:
+            replay = self._idempotent_replay(
+                store, environment_id, scope, idempotency_key, payload
+            )
+            if replay:
+                return replay
+            journal = self._journal_row(
+                store.session, environment_id, account_id, journal_id, for_update=True
+            )
+            self._require_journal_version(journal, request.journal_version)
+            link = store.session.execute(
+                select(schema.journal_order_links).where(
+                    schema.journal_order_links.c.journal_id == journal_id,
+                    schema.journal_order_links.c.order_id == order_id,
+                )
+            ).mappings().one_or_none()
+            if link is None:
+                raise ApplicationError(
+                    "JOURNAL_ORDER_LINK_NOT_FOUND",
+                    "Journal order link was not found",
+                    status_code=404,
+                )
+            now = self.now_ms()
+            store.session.execute(
+                delete(schema.journal_order_links).where(
+                    schema.journal_order_links.c.journal_id == journal_id,
+                    schema.journal_order_links.c.order_id == order_id,
+                )
+            )
+            next_version = request.journal_version + 1
+            store.session.execute(
+                update(schema.trading_journals)
+                .where(schema.trading_journals.c.journal_id == journal_id)
+                .values(version=next_version, updated_ts_ms=now)
+            )
+            self._audit_journal(
+                store,
+                journal_id,
+                "ORDER_UNLINKED",
+                next_version,
+                now,
+                from_status=journal["status"],
+                to_status=journal["status"],
+                reason=request.reason,
+                details={"order_id": order_id},
+            )
+            response = {
+                "journal_id": journal_id,
+                "order_id": order_id,
+                "journal_version": next_version,
+            }
+            self._record_idempotency(
+                store, environment_id, scope, idempotency_key, payload, 200, response
+            )
+            return 200, response
+
+    def journal_metrics(
+        self, environment_id: str, account_id: str, journal_id: str
+    ) -> dict[str, Any]:
+        with self.engine.connect() as connection:
+            journal = self._journal_row(
+                connection, environment_id, account_id, journal_id, for_update=False
+            )
+            return self._journal_metrics(connection, journal)
 
     def patch_journal(
         self,
@@ -1089,6 +1327,93 @@ class ApplicationService:
         }
 
     @staticmethod
+    def _journal_metrics(session: Any, journal: Any) -> dict[str, Any]:
+        links = list(
+            session.execute(
+                select(schema.journal_order_links.c.order_id).where(
+                    schema.journal_order_links.c.journal_id == journal["journal_id"]
+                )
+            ).scalars()
+        )
+        linked_ids = set(links)
+        if not linked_ids:
+            return {
+                "status": "AVAILABLE",
+                "attribution_scope": "LINKED_SELL_FILL_REALIZED_PNL_INCREMENT",
+                "linked_order_count": 0,
+                "linked_execution_count": 0,
+                "net_base_quantity": "0",
+                "fees_by_asset": {},
+                "attributed_realized_pnl_by_currency": {},
+                "trade_complete": False,
+                "incomplete_reasons": ["NO_LINKED_ORDERS"],
+            }
+        order_rows = list(
+            session.execute(
+                select(schema.paper_orders).where(schema.paper_orders.c.order_id.in_(linked_ids))
+            ).mappings()
+        )
+        active_statuses = {"PENDING_EXECUTION", "OPEN", "PARTIALLY_FILLED"}
+        has_active_orders = any(row["status"] in active_statuses for row in order_rows)
+        executions = tuple(
+            execution
+            for execution in PostgresStore(session).restore_executions(journal["environment_id"])
+            if execution.account_id == journal["account_id"]
+        )
+        portfolio = PortfolioEngine()
+        fees: dict[str, Decimal] = {}
+        pnl: dict[str, Decimal] = {}
+        net_base = Decimal(0)
+        linked_execution_count = 0
+        try:
+            for execution in executions:
+                before = portfolio.position(
+                    execution.account_id, execution.instrument_id
+                ).realized_pnl
+                after = portfolio.apply(execution).realized_pnl
+                if execution.order_id not in linked_ids:
+                    continue
+                linked_execution_count += 1
+                fees[execution.fee_asset] = (
+                    fees.get(execution.fee_asset, Decimal(0)) + execution.fee_amount
+                )
+                if execution.instrument_id == journal["instrument_id"]:
+                    if execution.side is OrderSide.BUY:
+                        net_base += execution.quantity
+                    else:
+                        net_base -= execution.quantity
+                        quote_asset = execution.instrument_id.rsplit("/", 1)[1]
+                        pnl[quote_asset] = pnl.get(quote_asset, Decimal(0)) + after - before
+        except Exception as exc:
+            logger.exception("Journal metric rebuild failed for %s", journal["journal_id"])
+            return {
+                "status": "UNAVAILABLE",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "attribution_scope": "LINKED_SELL_FILL_REALIZED_PNL_INCREMENT",
+            }
+        reasons: list[str] = []
+        if linked_execution_count == 0:
+            reasons.append("NO_LINKED_EXECUTIONS")
+        if net_base != 0:
+            reasons.append("LINKED_BASE_QUANTITY_NOT_CLOSED")
+        if has_active_orders:
+            reasons.append("ACTIVE_LINKED_ORDERS")
+        return {
+            "status": "AVAILABLE",
+            "attribution_scope": "LINKED_SELL_FILL_REALIZED_PNL_INCREMENT",
+            "cost_method": "ACCOUNT_MOVING_AVERAGE_FULL_HISTORY_REPLAY",
+            "linked_order_count": len(linked_ids),
+            "linked_execution_count": linked_execution_count,
+            "net_base_quantity": str(net_base),
+            "fees_by_asset": {asset: str(value) for asset, value in sorted(fees.items())},
+            "attributed_realized_pnl_by_currency": {
+                asset: str(value) for asset, value in sorted(pnl.items())
+            },
+            "trade_complete": linked_execution_count > 0 and not reasons,
+            "incomplete_reasons": reasons,
+        }
+
+    @staticmethod
     def _calculate_plan(request: Any, context: dict[str, Any]) -> dict[str, Any]:
         rules = context["market_rules"]
         fee = context["fee_schedule"]
@@ -1191,7 +1516,7 @@ class ApplicationService:
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one_or_none()
-                return revision == "0004_trading_journal"
+                return revision == "0005_journal_order_links"
         except Exception:
             # Reason is logged without secrets so operators can diagnose a
             # 503 from /health/ready; the response itself stays opaque.

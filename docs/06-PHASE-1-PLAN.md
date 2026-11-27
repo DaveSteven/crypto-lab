@@ -8,7 +8,7 @@
 | 当前阶段 | Phase 1 Accepted；Phase 2 前扩展任务 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
-| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14.1～1.14.4 Completed；Task 1.14.5～1.17 Pending |
+| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14.1～1.14.5 Completed；Task 1.14.6～1.17 Pending |
 
 ## 1. 目标
 
@@ -302,7 +302,7 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 
 ### Task 1.14 — Trading Journal
 
-**状态：Task 1.14.1～1.14.4 已完成；等待 Trade Plan Editor 验收，不自动进入 Order / Fill Association。**
+**状态：Task 1.14.1～1.14.5 已完成；等待 Order / Fill Association 验收，不自动进入 Emotion & Trading Discipline。**
 
 目标：支持个人金融学习、交易决策记录、交易纪律训练及复盘。
 
@@ -328,11 +328,11 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 
 子任务：
 
-1. 1.14.1 Architecture & Design（Proposed，等待确认）。
-2. 1.14.2 Persistence & REST API。
-3. 1.14.3 Journal List & Detail。
-4. 1.14.4 Trade Plan Editor。
-5. 1.14.5 Order & Fill Association。
+1. 1.14.1 Architecture & Design（Completed / Accepted）。
+2. 1.14.2 Persistence & REST API（Completed）。
+3. 1.14.3 Journal List & Detail（Completed）。
+4. 1.14.4 Trade Plan Editor（Completed）。
+5. 1.14.5 Order & Fill Association（Completed）。
 6. 1.14.6 Emotion & Trading Discipline。
 7. 1.14.7 Trade Review。
 8. 1.14.8 Integration & Acceptance。
