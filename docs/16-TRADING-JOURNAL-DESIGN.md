@@ -471,7 +471,7 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 | 1.14.1 | Architecture & Design | Completed；本文档 V0.2、Roadmap、负责人决策 |
 | 1.14.2 | Persistence & REST API | Completed；Journal/Revision Migration、Planner Context/Preview、Fee/Rules 读取、Service、Schema、OpenAPI、PostgreSQL 测试 |
 | 1.14.3 | Journal List & Detail | Completed；`/journal`、Draft 创建、详情页、查询、状态及只读 Revision 展示 |
-| 1.14.4 | Trade Plan Editor | P0 Planner、实时 Decimal 预览、权威校验、首次快照、Revision、带入 Order Entry |
+| 1.14.4 | Trade Plan Editor | Completed；P0 Planner、实时 Decimal 预览、权威校验、首次快照、Revision、带入 Order Entry |
 | 1.14.5 | Order & Fill Association | 订单关联、派生 Fill、日志级指标与口径说明 |
 | 1.14.6 | Emotion & Trading Discipline | 情绪时间线、Checklist 快照与完成规则 |
 | 1.14.7 | Trade Review | 复盘、完成判定、归档和学习摘要 |
@@ -526,3 +526,17 @@ Task 1.14.3 已于 2026-11-27 完成：
 - REST 响应使用 Zod 校验，Decimal 保持字符串，不以显示值参与金融计算。
 
 前端验证：Vitest 140 passed；TypeScript/Vite build 通过；Oxlint 无新增告警（保留既有 Chart effect warning）。Docker Compose 已重建，Migration、Backend 与 Frontend 健康，Nginx 代理下 Journal 列表 API 实际返回成功。浏览器控制服务当时不可用，因此本子任务尚缺真实浏览器截图，不能将视觉截图验收描述为已完成。
+
+## 16. Task 1.14.4 实施记录
+
+Task 1.14.4 已于 2026-11-27 完成：
+
+- Draft 详情页提供 Spot Long Trade Planner，输入 Entry、名义仓位、SL、TP、仓位上限、账户风险上限及最低净收益风险比。
+- 前端使用 Decimal 实时计算数量、双边费用、预计净盈利/亏损、净收益风险比、账户风险率、仓位率及最大允许仓位；显示计算不回写为后端权威结果。
+- Planner Context 只读取后端实际有效资产、可用余额、Fee Schedule、Market Rules 和行情状态，不使用前端参考费率替代。
+- “执行权威校验”调用无副作用 Preview；输入修改后旧校验立即失效，未获得当前输入的权威结果时不能保存 Revision。
+- Revision 保存由后端重新获取 Context 并重算；READY 动作创建首次确认快照。计划估算、市场信号和实际交易结果在 UI 中明确分离。
+- 只有首次确认快照可以带入 Order Entry；联动仅创建 Spot Long LIMIT 草稿，保留原订单校验、预览及强制确认 Dialog，不自动提交订单。
+- SL/TP 继续仅作为计划记录，不创建自动止损止盈订单；Order / Fill 关联留给 Task 1.14.5。
+
+验证结果：Vitest 145 passed；TypeScript/Vite build 通过；Oxlint 无新增告警（仅保留既有 Chart effect warning）；Docker Compose 重建及健康检查通过；真实 Planner Context REST 验证通过。当前真实环境当时没有有效订单簿，接口正确返回 `market_status=UNAVAILABLE`，未伪装成可确认行情。浏览器控制未获 Chrome 权限，因此真实浏览器截图仍未完成。

@@ -10,7 +10,10 @@ import type {
   Snapshot,
   TopicFilter,
   TradingJournal,
+  PlannerContext,
+  PlannerPreview,
 } from './schemas'
+import { z } from 'zod'
 import {
   ApiErrorEnvelope,
   Account as AccountSchema,
@@ -23,6 +26,9 @@ import {
   Position as PositionSchema,
   Snapshot as SnapshotSchema,
   TradingJournal as TradingJournalSchema,
+  PlannerContext as PlannerContextSchema,
+  PlannerPreview as PlannerPreviewSchema,
+  PlanRevision as PlanRevisionSchema,
 } from './schemas'
 
 /** Error parsed from the docs/09 §6 error envelope. */
@@ -67,6 +73,16 @@ export type JournalCreateRequest = {
   market_trend?: string
   trade_reason?: string
   entry_conditions?: string
+}
+
+export type TradePlanRequest = {
+  entry_price: string
+  planned_position_notional: string
+  stop_loss_price: string
+  take_profit_price: string
+  max_position_notional: string
+  max_account_risk_rate: string
+  min_reward_risk_ratio: string
 }
 
 type Query = Record<string, string | number | undefined>
@@ -274,6 +290,67 @@ export class RestClient {
     const body = await this.request(
       'GET',
       `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}`,
+    )
+    return TradingJournalSchema.parse(body)
+  }
+
+  async plannerContext(
+    environmentId: string,
+    accountId: string,
+    instrumentId: string,
+  ): Promise<PlannerContext> {
+    const body = await this.request(
+      'GET',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/trade-planner/context${queryString({ instrument_id: instrumentId })}`,
+    )
+    return PlannerContextSchema.parse(body)
+  }
+
+  async previewTradePlan(
+    environmentId: string,
+    accountId: string,
+    instrumentId: string,
+    request: TradePlanRequest,
+  ): Promise<PlannerPreview> {
+    const body = await this.request(
+      'POST',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/trade-planner/preview`,
+      { instrument_id: instrumentId, ...request },
+    )
+    return PlannerPreviewSchema.parse(body)
+  }
+
+  async createPlanRevision(
+    environmentId: string,
+    accountId: string,
+    journalId: string,
+    journalVersion: number,
+    revisionReason: string,
+    request: TradePlanRequest,
+  ) {
+    const body = await this.request(
+      'POST',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}/plan/revisions`,
+      { ...request, journal_version: journalVersion, revision_reason: revisionReason },
+      201,
+      this.newIdempotencyKey(),
+    )
+    return PlanRevisionSchema.extend({ journal_version: z.number() }).parse(body)
+  }
+
+  async readyJournal(
+    environmentId: string,
+    accountId: string,
+    journalId: string,
+    version: number,
+    reason: string,
+  ): Promise<TradingJournal> {
+    const body = await this.request(
+      'POST',
+      `/api/v1/environments/${environmentId}/accounts/${accountId}/journals/${journalId}/ready`,
+      { version, reason },
+      200,
+      this.newIdempotencyKey(),
     )
     return TradingJournalSchema.parse(body)
   }

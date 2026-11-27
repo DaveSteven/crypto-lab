@@ -77,6 +77,33 @@ export function OrderEntryPanel() {
     [],
   )
 
+  // A confirmed Journal plan can populate an order draft, but never submits it.
+  // The existing validation and mandatory confirmation dialog remain unchanged.
+  useEffect(
+    () => {
+      function applyPlannedOrder(plan: NonNullable<ReturnType<typeof useOrderDraftStore.getState>['plannedOrder']>) {
+        setValues({
+          ...EMPTY_FORM,
+          instrument_id: plan.instrumentId,
+          side: 'BUY',
+          order_type: 'LIMIT',
+          quantity: plan.quantity,
+          limit_price: plan.limitPrice,
+          latency_preset: 'NORMAL',
+        })
+        setMessage(`已带入交易计划 ${plan.journalId.slice(0, 8)}…，请检查后预览订单。`)
+        useOrderDraftStore.getState().clearPlan()
+      }
+      const initial = useOrderDraftStore.getState().plannedOrder
+      if (initial !== null) applyPlannedOrder(initial)
+      return useOrderDraftStore.subscribe((state, previous) => {
+        if (state.planNonce === previous.planNonce || state.plannedOrder === null) return
+        applyPlannedOrder(state.plannedOrder)
+      })
+    },
+    [],
+  )
+
   function update(patch: Partial<OrderFormValues>) {
     setValues((previous) => ({ ...previous, ...patch }))
   }

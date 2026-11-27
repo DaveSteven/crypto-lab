@@ -317,6 +317,64 @@ export type JournalStatus = z.infer<typeof JournalStatus>
 export type PlanRevision = z.infer<typeof PlanRevision>
 export type TradingJournal = z.infer<typeof TradingJournal>
 
+const PlannerValidation = z.object({
+  status: z.enum(['PASS', 'FAIL', 'UNAVAILABLE']),
+  reason: z.string(),
+})
+
+export const PlannerContext = z.object({
+  environment_id: z.string(),
+  account_id: z.string(),
+  instrument_id: z.string(),
+  as_of_ts_ms: z.number(),
+  quote_asset: z.string(),
+  available_quote_balance: DecimalString,
+  effective_account_equity: DecimalString.nullable(),
+  valuation_status: z.enum(['COMPLETE', 'INCOMPLETE']),
+  unavailable_assets: z.array(z.string()),
+  fee_schedule: z.object({
+    schedule_id: z.string(),
+    maker_fee_rate: DecimalString,
+    taker_fee_rate: DecimalString,
+    conservative_fee_rate: DecimalString,
+    fee_asset_mode: z.string(),
+  }),
+  market_rules: z.object({
+    instrument_id: z.string(),
+    rules_id: z.string(),
+    price_increment: DecimalString,
+    quantity_increment: DecimalString,
+    min_quantity: DecimalString,
+    min_notional: DecimalString.nullable(),
+  }),
+  market_status: z.enum(['VALID', 'UNAVAILABLE']),
+  market_event_id: z.string().nullable(),
+  market_updated_ts_ms: z.number().nullable(),
+})
+
+export const PlannerPreview = z.object({
+  calculator_version: z.string(),
+  validation_status: z.enum(['PASS', 'FAIL', 'UNAVAILABLE']),
+  validations: z.record(z.string(), PlannerValidation),
+  calculation: z.object({
+    quantity: DecimalString.nullable(),
+    entry_notional: DecimalString.nullable(),
+    entry_fee: DecimalString.nullable(),
+    exit_fee_at_take_profit: DecimalString.nullable(),
+    exit_fee_at_stop_loss: DecimalString.nullable(),
+    estimated_net_profit: DecimalString.nullable(),
+    estimated_net_loss: DecimalString.nullable(),
+    net_reward_risk_ratio: DecimalString.nullable(),
+    account_risk_ratio: DecimalString.nullable(),
+    position_ratio: DecimalString.nullable(),
+    maximum_allowed_position_notional: DecimalString.nullable(),
+  }),
+  context: PlannerContext,
+})
+
+export type PlannerContext = z.infer<typeof PlannerContext>
+export type PlannerPreview = z.infer<typeof PlannerPreview>
+
 // ---------------------------------------------------------------------------
 // WebSocket envelope (docs/10 §3)
 // ---------------------------------------------------------------------------

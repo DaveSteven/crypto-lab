@@ -25,6 +25,7 @@ beforeEach(() => {
   useTradingStore.setState({ synced: true }) // authoritative snapshot applied
   useConnectionStore.getState().update({ status: 'subscribed', resyncReason: null })
   useInstrumentStore.getState().setInstrument('okx:SPOT:BTC/USDT')
+  useOrderDraftStore.setState({ plannedOrder: null, planNonce: 0, pickedPrice: null, pickNonce: 0 })
 })
 
 describe('OrderEntryPanel', () => {
@@ -132,6 +133,22 @@ describe('OrderEntryPanel', () => {
     act(() => useOrderDraftStore.getState().pickPrice('61000.5'))
     expect(await screen.findByDisplayValue('61000.5')).toBeVisible()
     expect(screen.getByRole('button', { name: '限价' })).toBeVisible()
+  })
+
+  test('a confirmed Journal plan populates a LIMIT draft but keeps mandatory preview', async () => {
+    useOrderDraftStore.getState().applyPlan({
+      instrumentId: 'okx:SPOT:BTC/USDT',
+      quantity: '0.01',
+      limitPrice: '60000.1',
+      journalId: 'journal-123456',
+    })
+    render(<OrderEntryPanel />)
+    expect(await screen.findByDisplayValue('0.01')).toBeVisible()
+    expect(screen.getByDisplayValue('60000.1')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('已带入交易计划')
+    expect(screen.getByRole('button', { name: '预览买入订单' })).toBeEnabled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(useOrderDraftStore.getState().plannedOrder).toBeNull()
   })
 
   test('confirmation dialog previews the order and nothing is sent until confirmed', async () => {

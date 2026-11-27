@@ -6,6 +6,9 @@ import { RestClient } from '@/shared/api/rest'
 import { formatAmount, formatPercentage, formatPrice, instrumentLabel } from '@/shared/lib/format'
 import { Badge, Button, EmptyState, ErrorState, PageContainer, PageHeader, Panel } from '@/shared/ui'
 import { formatJournalDate, JOURNAL_STATUS } from './journalDisplay'
+import { TradePlanEditor } from './TradePlanEditor'
+import { useOrderDraftStore } from '@/features/trading/orderDraftStore'
+import { useInstrumentStore } from '@/features/market/instrumentStore'
 
 const rest = new RestClient()
 
@@ -30,16 +33,30 @@ export function JournalDetailPage() {
   const revisions = journal.plan_revisions ?? []
   const current = revisions.find((item) => item.plan_revision_id === journal.current_plan_revision_id) ?? revisions.at(-1)
   const calculation = current?.calculation_json ?? {}
+  const confirmed = revisions.find((item) => item.is_initial_confirmed)
+
+  function takeToOrderEntry() {
+    const quantity = asString(confirmed?.calculation_json.quantity)
+    if (confirmed === undefined || quantity === null) return
+    useInstrumentStore.getState().setInstrument(journal.instrument_id)
+    useOrderDraftStore.getState().applyPlan({
+      instrumentId: journal.instrument_id,
+      quantity,
+      limitPrice: confirmed.entry_price,
+      journalId: journal.journal_id,
+    })
+    navigate('/trading')
+  }
 
   return (
     <PageContainer>
-      <PageHeader title={journal.title} description={`${instrumentLabel(journal.instrument_id)} · ${journal.timeframe ?? '未设置周期'} · 创建于 ${formatJournalDate(journal.created_ts_ms)}`} actions={<><Badge tone={status.tone}>{status.label}</Badge><Button variant="outline" onClick={() => navigate('/journal')}>返回列表</Button></>} />
+      <PageHeader title={journal.title} description={`${instrumentLabel(journal.instrument_id)} · ${journal.timeframe ?? '未设置周期'} · 创建于 ${formatJournalDate(journal.created_ts_ms)}`} actions={<><Badge tone={status.tone}>{status.label}</Badge>{confirmed && <Button variant="primary" onClick={takeToOrderEntry}>带入下单草稿</Button>}<Button variant="outline" onClick={() => navigate('/journal')}>返回列表</Button></>} />
       <div className="grid grid-cols-[minmax(0,2fr)_minmax(300px,1fr)] gap-4">
         <div className="space-y-4">
           <Panel title="市场分析" bodyClassName="grid grid-cols-2 gap-5 p-5"><Detail label="市场趋势" value={text(journal.market_trend)} /><Detail label="交易理由" value={text(journal.trade_reason)} /><div className="col-span-2"><Detail label="入场条件" value={text(journal.entry_conditions)} /></div></Panel>
-          <Panel title="交易计划（只读）" bodyClassName="p-5">
+          {journal.status === 'DRAFT' ? <TradePlanEditor journal={journal} onUpdated={() => void query.refetch()} /> : <Panel title="交易计划（只读）" bodyClassName="p-5">
             {current === undefined ? <EmptyState message="尚未保存交易计划。Trade Plan Editor 将在 Task 1.14.4 提供。" /> : <><div className="mb-4 flex items-center justify-between"><span className="text-[12px] text-ink-muted">Revision {current.revision_number} · {formatJournalDate(current.created_ts_ms)}</span><Badge tone={current.validation_status === 'PASS' ? 'positive' : current.validation_status === 'FAIL' ? 'negative' : 'warning'}>{current.validation_status === 'PASS' ? '数值规则通过' : current.validation_status === 'FAIL' ? '数值规则未通过' : '校验不可用'}</Badge></div><div className="grid grid-cols-4 gap-4"><Metric label="计划入场" value={formatPrice(current.entry_price, journal.instrument_id)} unit="USDT" /><Metric label="计划仓位" value={formatAmount(current.planned_position_notional)} unit="USDT" /><Metric label="止损 SL" value={formatPrice(current.stop_loss_price, journal.instrument_id)} unit="USDT" /><Metric label="止盈 TP" value={formatPrice(current.take_profit_price, journal.instrument_id)} unit="USDT" /><Metric label="预计净盈利" value={formatAmount(asString(calculation.estimated_net_profit))} unit="USDT" /><Metric label="预计净亏损" value={formatAmount(asString(calculation.estimated_net_loss))} unit="USDT" /><Metric label="净收益风险比" value={asString(calculation.net_reward_risk_ratio) ?? '—'} /><Metric label="账户风险比例" value={formatPercentage(asPercent(calculation.account_risk_ratio))} unit="%" /></div><p className="mt-4 text-[12px] text-warning">以上均为计划估算，不是实际收益或保证亏损上限；SL/TP 不会自动执行订单。</p></>}
-          </Panel>
+          </Panel>}
           <Panel title="执行与复盘" bodyClassName="grid grid-cols-2 gap-5 p-5"><Detail label="执行备注" value={text(journal.execution_notes)} /><Detail label="复盘总结" value={text(journal.review_summary)} /></Panel>
         </div>
         <div className="space-y-4">
