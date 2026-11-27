@@ -4,7 +4,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V0.2 |
+| 文档版本 | V0.3 |
 | 对应任务 | Phase 1 Task 1.10 |
 | 状态 | Implemented / Accepted |
 | 框架 | FastAPI |
@@ -12,6 +12,8 @@
 ## 1. 目标与边界
 
 Task 1.10 提供本地模拟交易的同步 REST API，包括环境、账户、余额、订单、成交及持仓。API 只接受用户交易意图，不允许客户端提交成交价格、成交数量、手续费、流动性角色或成交结果。
+
+Task 1.14.2 在不改变交易接口语义的前提下增加 Trading Journal 与 Trade Planner REST：Journal 是账户级学习记录，Planner Preview 是无副作用的权威 Decimal 计算；两者均不得修改撮合状态或交易 `state_version`。
 
 本任务不实现 Task 1.11 的行情 WebSocket，不提供真实交易、钱包、登录注册、策略执行或公网部署。
 

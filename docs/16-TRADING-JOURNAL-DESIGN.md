@@ -468,8 +468,8 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 
 | Task | 内容 | 主要交付 |
 |---|---|---|
-| 1.14.1 | Architecture & Design | 本文档、Roadmap、确认事项 |
-| 1.14.2 | Persistence & REST API | Journal/Revision Migration、Planner Context/Preview、Fee/Rules 读取、Store、Service、Schema、OpenAPI、PostgreSQL 测试 |
+| 1.14.1 | Architecture & Design | Completed；本文档 V0.2、Roadmap、负责人决策 |
+| 1.14.2 | Persistence & REST API | Completed；Journal/Revision Migration、Planner Context/Preview、Fee/Rules 读取、Service、Schema、OpenAPI、PostgreSQL 测试 |
 | 1.14.3 | Journal List & Detail | `/journal`、详情页、查询与状态展示 |
 | 1.14.4 | Trade Plan Editor | P0 Planner、实时 Decimal 预览、权威校验、首次快照、Revision、带入 Order Entry |
 | 1.14.5 | Order & Fill Association | 订单关联、派生 Fill、日志级指标与口径说明 |
@@ -498,3 +498,18 @@ Task 1.17 只基于锁定的 Strategy Version、完整 Journal 样本及客观 E
 13. Order 创建成功但 Link 失败时使用独立幂等关联恢复，不得重复下单；所有关键关联和状态转换具备并发控制。
 14. 交易前 Checklist 与交易后纪律评估分离；READY 不代表入场信号成立，计划 SL/TP 不代表自动执行。
 15. 风险校验不得阻止撤单、减仓和平仓；Journal 写入不得改变交易引擎 `state_version`，也不得改变现有金融结算或撮合规则。
+
+## 14. Task 1.14.2 实施记录
+
+Task 1.14.2 已于 2026-11-27 完成，范围严格限定在 PostgreSQL 与后端 REST：
+
+- Alembic head 更新为 `0004_trading_journal`，新增 Journal、不可变 Plan Revision 和追加式 Audit Event 表；完成独立测试库 upgrade/downgrade/upgrade 验证。
+- 实现 Journal 创建、列表、详情、乐观锁更新、READY/CANCELLED 转换，以及 Plan Revision 的幂等保存和首次确认快照。
+- 实现只读 Fee Schedule、Market Rules、Planner Context，以及无副作用的权威 Decimal Preview。
+- Context 使用有效 Bid 对可用及冻结资产估值；非零资产不可估值时返回 INCOMPLETE，行情缺失或过期时返回 UNAVAILABLE。
+- 权威 Preview 使用 `max(maker,taker)`、交易所 tick/step/min 规则和名义仓位/资金占用分离语义；所有 Decimal 经字符串 Contract 传输。
+- Revision 保存时重新读取 Context 并重算；Journal 写事务不调用交易状态版本递增，不改变 Ledger、Order、Execution 或撮合状态。
+- 一个首次确认快照通过新增不可变 Revision 保存，避免更新既有 Revision。`current_plan_revision_id` 由同一 Journal 事务维护；Revision 自身通过 RESTRICT FK 归属于 Journal。
+- Order/Fill Link、Emotion、Checklist、Review UI 与 Journal 前端未提前实现。
+
+验收结果：Ruff 全量通过；独立 `crypto_lab_test` PostgreSQL 数据库完整后端回归为 360 passed。正式本地模拟数据库未用于测试或清理。

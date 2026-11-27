@@ -25,7 +25,16 @@ from crypto_lab.api.market_feed import (
     MarketFeedSettings,
     build_market_feed,
 )
-from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
+from crypto_lab.api.schemas import (
+    AccountCreate,
+    EnvironmentCreate,
+    JournalCreate,
+    JournalPatch,
+    JournalTransition,
+    OrderCreate,
+    PlanRevisionCreate,
+    TradePlannerPreview,
+)
 from crypto_lab.api.service import ApplicationService
 from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.persistence import PersistenceError
@@ -129,6 +138,8 @@ def create_app(
             fee_schedule=fee_schedule,
             realtime_publisher=publisher,
             candle_client=(candle_client_factory or OkxCandleClient)(),
+            market_rules=OKX_SPOT_RULES,
+            max_market_age_ms=feed_settings.max_book_age_ms,
             **({"now_ms": now_ms} if now_ms is not None else {}),
         )
         if feed_settings.enabled:
@@ -261,6 +272,14 @@ def create_app(
                 )
         return {"feed_enabled": feed_settings.enabled, "items": items}
 
+    @app.get("/api/v1/config/fee-schedule")
+    def fee_schedule() -> dict[str, Any]:
+        return service.fee_schedule_view()
+
+    @app.get("/api/v1/market/rules/{instrument_id:path}")
+    def market_rules(instrument_id: str) -> dict[str, Any]:
+        return service.market_rules_view(instrument_id)
+
     @app.get("/health/recovery")
     def recovery() -> dict[str, Any]:
         if dispatcher is None:
@@ -329,6 +348,98 @@ def create_app(
     @app.get("/api/v1/environments/{environment_id}/accounts/{account_id}/positions")
     def positions(environment_id: str, account_id: str) -> dict[str, Any]:
         return {"items": service.positions(environment_id, account_id)}
+
+    journal_base = "/api/v1/environments/{environment_id}/accounts/{account_id}/journals"
+
+    @app.post(journal_base, status_code=201)
+    def create_journal(
+        environment_id: str,
+        account_id: str,
+        body: JournalCreate,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.create_journal(environment_id, account_id, body, key)
+        return JSONResponse(result, status_code=status)
+
+    @app.get(journal_base)
+    def list_journals(
+        environment_id: str,
+        account_id: str,
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+        status: str | None = None,
+        instrument_id: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "items": service.list_journals(
+                environment_id, account_id, limit, status, instrument_id
+            )
+        }
+
+    @app.get(f"{journal_base}/{{journal_id}}")
+    def get_journal(environment_id: str, account_id: str, journal_id: str) -> dict[str, Any]:
+        return service.get_journal(environment_id, account_id, journal_id)
+
+    @app.patch(f"{journal_base}/{{journal_id}}")
+    def patch_journal(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        body: JournalPatch,
+    ) -> dict[str, Any]:
+        return service.patch_journal(environment_id, account_id, journal_id, body)
+
+    @app.post(f"{journal_base}/{{journal_id}}/plan/revisions", status_code=201)
+    def create_plan_revision(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        body: PlanRevisionCreate,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.create_plan_revision(
+            environment_id, account_id, journal_id, body, key
+        )
+        return JSONResponse(result, status_code=status)
+
+    @app.post(f"{journal_base}/{{journal_id}}/ready")
+    def ready_journal(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        body: JournalTransition,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.transition_journal(
+            environment_id, account_id, journal_id, "READY", body, key
+        )
+        return JSONResponse(result, status_code=status)
+
+    @app.post(f"{journal_base}/{{journal_id}}/cancel")
+    def cancel_journal(
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        body: JournalTransition,
+        key: IdempotencyKey,
+    ) -> JSONResponse:
+        status, result = service.transition_journal(
+            environment_id, account_id, journal_id, "CANCELLED", body, key
+        )
+        return JSONResponse(result, status_code=status)
+
+    @app.get(f"{journal_base}/trade-planner/context")
+    def planner_context(
+        environment_id: str, account_id: str, instrument_id: str
+    ) -> dict[str, Any]:
+        return service.planner_context(environment_id, account_id, instrument_id)
+
+    @app.post(f"{journal_base}/trade-planner/preview")
+    def preview_trade_plan(
+        environment_id: str,
+        account_id: str,
+        body: TradePlannerPreview,
+    ) -> dict[str, Any]:
+        return service.preview_trade_plan(environment_id, account_id, body)
 
     @app.post("/api/v1/environments/{environment_id}/orders", status_code=201)
     def create_order(

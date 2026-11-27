@@ -101,3 +101,74 @@ class ErrorBody(ApiModel):
 
 class ErrorResponse(ApiModel):
     error: ErrorBody
+
+
+class JournalCreate(ApiModel):
+    title: str = Field(min_length=1, max_length=200)
+    instrument_id: str = Field(
+        pattern=r"^[a-z0-9_-]+:SPOT:[A-Z0-9]+/[A-Z0-9]+$", max_length=100
+    )
+    timeframe: str | None = Field(default=None, max_length=20)
+    market_trend: str | None = Field(default=None, max_length=32)
+    trade_reason: str | None = None
+    entry_conditions: str | None = None
+
+
+class JournalPatch(ApiModel):
+    version: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    timeframe: str | None = Field(default=None, max_length=20)
+    market_trend: str | None = Field(default=None, max_length=32)
+    trade_reason: str | None = None
+    entry_conditions: str | None = None
+    execution_notes: str | None = None
+    review_summary: str | None = None
+    change_reason: str = Field(min_length=1, max_length=500)
+
+
+class JournalTransition(ApiModel):
+    version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class TradePlanInput(ApiModel):
+    entry_price: DecimalString
+    planned_position_notional: DecimalString
+    stop_loss_price: DecimalString
+    take_profit_price: DecimalString
+    max_position_notional: DecimalString
+    max_account_risk_rate: DecimalString
+    min_reward_risk_ratio: DecimalString
+
+    @field_validator(
+        "entry_price",
+        "planned_position_notional",
+        "stop_loss_price",
+        "take_profit_price",
+        "max_position_notional",
+        "max_account_risk_rate",
+        "min_reward_risk_ratio",
+        mode="before",
+    )
+    @classmethod
+    def positive_decimal_string(cls, value: object) -> Decimal:
+        if not isinstance(value, str):
+            raise ValueError("Decimal values must be JSON strings")
+        try:
+            parsed = Decimal(value)
+        except InvalidOperation as exc:
+            raise ValueError("invalid Decimal string") from exc
+        if not parsed.is_finite() or parsed <= 0:
+            raise ValueError("Decimal values must be positive and finite")
+        return parsed
+
+
+class TradePlannerPreview(TradePlanInput):
+    instrument_id: str = Field(
+        pattern=r"^[a-z0-9_-]+:SPOT:[A-Z0-9]+/[A-Z0-9]+$", max_length=100
+    )
+
+
+class PlanRevisionCreate(TradePlanInput):
+    journal_version: int = Field(ge=1)
+    revision_reason: str = Field(min_length=1, max_length=500)

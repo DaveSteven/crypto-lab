@@ -9,6 +9,13 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+LATER_REVISION_TABLES = {
+    "api_idempotency_keys",
+    "trading_journals",
+    "trade_plan_revisions",
+    "journal_audit_events",
+}
+
 
 def upgrade() -> None:
     metadata.create_all(
@@ -16,7 +23,7 @@ def upgrade() -> None:
         tables=[
             table
             for name, table in metadata.tables.items()
-            if name != "api_idempotency_keys"
+            if name not in LATER_REVISION_TABLES
         ],
         checkfirst=False,
     )
@@ -35,7 +42,7 @@ def downgrade() -> None:
         tables=[
             table
             for name, table in metadata.tables.items()
-            if name != "api_idempotency_keys"
+            if name not in LATER_REVISION_TABLES
         ],
         checkfirst=False,
     )

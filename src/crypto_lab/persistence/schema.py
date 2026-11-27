@@ -2,6 +2,7 @@
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     ForeignKey,
@@ -256,4 +257,108 @@ api_idempotency_keys = Table(
     Column("response_status", BigInteger, nullable=False),
     Column("response_json", JSONB, nullable=False),
     Column("created_ts_ms", BigInteger, nullable=False),
+)
+
+trading_journals = Table(
+    "trading_journals",
+    metadata,
+    Column("journal_id", String(64), primary_key=True),
+    Column("environment_id", String(64), nullable=False),
+    Column("account_id", String(64), nullable=False),
+    Column("instrument_id", String(100), nullable=False),
+    Column("title", String(200), nullable=False),
+    Column("status", String(20), nullable=False),
+    Column("version", BigInteger, nullable=False),
+    Column("current_plan_revision_id", String(64)),
+    Column("timeframe", String(20)),
+    Column("market_trend", String(32)),
+    Column("trade_reason", String),
+    Column("entry_conditions", String),
+    Column("execution_notes", String),
+    Column("review_summary", String),
+    Column("archive_reason", String),
+    Column("created_ts_ms", BigInteger, nullable=False),
+    Column("updated_ts_ms", BigInteger, nullable=False),
+    Column("ready_ts_ms", BigInteger),
+    Column("activated_ts_ms", BigInteger),
+    Column("closed_ts_ms", BigInteger),
+    Column("reviewed_ts_ms", BigInteger),
+    Column("cancelled_ts_ms", BigInteger),
+    ForeignKeyConstraint(
+        ("environment_id", "account_id"),
+        ("paper_accounts.environment_id", "paper_accounts.account_id"),
+    ),
+    CheckConstraint("version > 0", name="ck_journal_version_positive"),
+    CheckConstraint(
+        "status IN ('DRAFT','READY','ACTIVE','CLOSED','REVIEWED','CANCELLED')",
+        name="ck_journal_status",
+    ),
+)
+Index(
+    "ix_journal_account_updated",
+    trading_journals.c.environment_id,
+    trading_journals.c.account_id,
+    trading_journals.c.updated_ts_ms.desc(),
+)
+Index("ix_journal_status", trading_journals.c.status)
+Index("ix_journal_instrument", trading_journals.c.instrument_id)
+
+trade_plan_revisions = Table(
+    "trade_plan_revisions",
+    metadata,
+    Column("plan_revision_id", String(64), primary_key=True),
+    Column(
+        "journal_id",
+        ForeignKey("trading_journals.journal_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("revision_number", BigInteger, nullable=False),
+    Column("entry_price", money, nullable=False),
+    Column("planned_position_notional", money, nullable=False),
+    Column("stop_loss_price", money, nullable=False),
+    Column("take_profit_price", money, nullable=False),
+    Column("max_position_notional", money, nullable=False),
+    Column("max_account_risk_rate", money, nullable=False),
+    Column("min_reward_risk_ratio", money, nullable=False),
+    Column("context_json", JSONB, nullable=False),
+    Column("calculation_json", JSONB, nullable=False),
+    Column("validation_results_json", JSONB, nullable=False),
+    Column("validation_status", String(20), nullable=False),
+    Column("calculator_version", String(32), nullable=False),
+    Column("revision_reason", String, nullable=False),
+    Column("is_initial_confirmed", Boolean, nullable=False),
+    Column("created_ts_ms", BigInteger, nullable=False),
+    Column("confirmed_ts_ms", BigInteger),
+    UniqueConstraint("journal_id", "revision_number", name="uq_plan_revision_number"),
+    CheckConstraint("revision_number > 0", name="ck_plan_revision_number_positive"),
+)
+Index(
+    "uq_plan_initial_confirmed",
+    trade_plan_revisions.c.journal_id,
+    unique=True,
+    postgresql_where=trade_plan_revisions.c.is_initial_confirmed.is_(True),
+)
+
+journal_audit_events = Table(
+    "journal_audit_events",
+    metadata,
+    Column("audit_event_id", String(64), primary_key=True),
+    Column(
+        "journal_id",
+        ForeignKey("trading_journals.journal_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("event_type", String(50), nullable=False),
+    Column("from_status", String(20)),
+    Column("to_status", String(20)),
+    Column("reason", String),
+    Column("journal_version", BigInteger, nullable=False),
+    Column("details_json", JSONB, nullable=False),
+    Column("created_ts_ms", BigInteger, nullable=False),
+)
+Index(
+    "ix_journal_audit_sequence",
+    journal_audit_events.c.journal_id,
+    journal_audit_events.c.created_ts_ms,
+    journal_audit_events.c.audit_event_id,
 )

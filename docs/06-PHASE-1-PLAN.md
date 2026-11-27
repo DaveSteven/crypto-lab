@@ -8,7 +8,7 @@
 | 当前阶段 | Phase 1 Accepted；Phase 2 前扩展任务 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
-| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14.1 设计完成待确认；Task 1.15～1.17 Pending |
+| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14.1～1.14.2 Completed；Task 1.14.3～1.17 Pending |
 
 ## 1. 目标
 
@@ -40,7 +40,7 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.16 | Trading Experiment | Pending（Phase 2 前扩展任务） |
 | 1.17 | Experiment Analytics | Pending（Phase 2 前扩展任务） |
 
-Task 1.14～1.17 是 Task 1.13 完成后、Phase 2 开始前新增的个人学习与策略研究任务，不追溯改变 Task 1.13 及 Phase 1 已通过的验收结论。开发顺序为 Trading Journal → Chart Analysis → Trading Experiment → Experiment Analytics → Phase 2。Task 1.14.1 已形成 Proposed 设计，见 [`16-TRADING-JOURNAL-DESIGN.md`](16-TRADING-JOURNAL-DESIGN.md)；负责人确认前不进入 Migration 或业务实现。
+Task 1.14～1.17 是 Task 1.13 完成后、Phase 2 开始前新增的个人学习与策略研究任务，不追溯改变 Task 1.13 及 Phase 1 已通过的验收结论。开发顺序为 Trading Journal → Chart Analysis → Trading Experiment → Experiment Analytics → Phase 2。Task 1.14.1 设计已经 Accepted，Task 1.14.2 Persistence & REST API 已完成；见 [`16-TRADING-JOURNAL-DESIGN.md`](16-TRADING-JOURNAL-DESIGN.md)。
 
 ### Task 1.1 — 模拟账户与资金流水
 
@@ -302,7 +302,7 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 
 ### Task 1.14 — Trading Journal
 
-**状态：Task 1.14.1 Architecture & Design 已完成，等待负责人确认；尚未开始业务开发。**
+**状态：Task 1.14.1 Architecture & Design、Task 1.14.2 Persistence & REST API 已完成；等待 1.14.2 验收，不自动进入前端开发。**
 
 目标：支持个人金融学习、交易决策记录、交易纪律训练及复盘。
 

@@ -11,12 +11,22 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel
-from sqlalchemy import Select, select, text
+from sqlalchemy import Select, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
 from crypto_lab.api.errors import ApplicationError
-from crypto_lab.api.schemas import AccountCreate, EnvironmentCreate, OrderCreate
+from crypto_lab.api.schemas import (
+    AccountCreate,
+    EnvironmentCreate,
+    JournalCreate,
+    JournalPatch,
+    JournalTransition,
+    OrderCreate,
+    PlanRevisionCreate,
+    TradePlannerPreview,
+)
+from crypto_lab.api.trade_planner import calculate_plan
 from crypto_lab.market_data import OkxCandleClient
 from crypto_lab.models import ExchangeId
 from crypto_lab.persistence import PostgresUnitOfWork, schema
@@ -65,10 +75,14 @@ class ApplicationService:
         now_ms: Callable[[], int] = utc_now_ms,
         realtime_publisher: RealtimePublisher | None = None,
         candle_client: OkxCandleClient | None = None,
+        market_rules: dict[str, Any] | None = None,
+        max_market_age_ms: int = 5_000,
     ) -> None:
         self.engine = engine
         self.realtime_publisher = realtime_publisher
         self.candle_client = candle_client
+        self.market_rules = market_rules or {}
+        self.max_market_age_ms = max_market_age_ms
         self.uow = PostgresUnitOfWork(
             engine,
             after_commit=(
@@ -77,6 +91,27 @@ class ApplicationService:
         )
         self.fee_schedule = fee_schedule
         self.now_ms = now_ms
+
+    def fee_schedule_view(self) -> dict[str, Any]:
+        if self.fee_schedule is None:
+            raise ApplicationError(
+                "FEE_SCHEDULE_UNAVAILABLE", "fee schedule is not configured", status_code=503
+            )
+        return {
+            "schedule_id": self.fee_schedule.schedule_id,
+            "maker_fee_rate": str(self.fee_schedule.maker_rate),
+            "taker_fee_rate": str(self.fee_schedule.taker_rate),
+            "conservative_fee_rate": str(self.fee_schedule.maximum_rate),
+            "fee_asset_mode": "QUOTE_ASSET",
+        }
+
+    def market_rules_view(self, instrument_id: str) -> dict[str, Any]:
+        rules = self.market_rules.get(instrument_id)
+        if rules is None:
+            raise ApplicationError(
+                "MARKET_RULES_UNAVAILABLE", "market rules are not configured", status_code=503
+            )
+        return _json_value(rules.model_dump(mode="python")) | {"instrument_id": instrument_id}
 
     def create_environment(
         self, request: EnvironmentCreate, idempotency_key: str
@@ -612,13 +647,551 @@ class ApplicationService:
             "source": "OKX_PUBLIC_REST",
         }
 
+    def create_journal(
+        self,
+        environment_id: str,
+        account_id: str,
+        request: JournalCreate,
+        idempotency_key: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload = request.model_dump(mode="json") | {"account_id": account_id}
+        with self.uow.bootstrap() as store:
+            self._require_account(store.session, environment_id, account_id)
+            replay = self._idempotent_replay(
+                store, environment_id, f"create-journal:{account_id}", idempotency_key, payload
+            )
+            if replay:
+                return replay
+            now = self.now_ms()
+            journal_id = f"journal_{uuid4().hex}"
+            values = {
+                "journal_id": journal_id,
+                "environment_id": environment_id,
+                "account_id": account_id,
+                "instrument_id": request.instrument_id,
+                "title": request.title,
+                "status": "DRAFT",
+                "version": 1,
+                "timeframe": request.timeframe,
+                "market_trend": request.market_trend,
+                "trade_reason": request.trade_reason,
+                "entry_conditions": request.entry_conditions,
+                "created_ts_ms": now,
+                "updated_ts_ms": now,
+            }
+            store.session.execute(schema.trading_journals.insert().values(**values))
+            self._audit_journal(store, journal_id, "CREATED", 1, now, details={})
+            response = _json_value(values)
+            self._record_idempotency(
+                store,
+                environment_id,
+                f"create-journal:{account_id}",
+                idempotency_key,
+                payload,
+                201,
+                response,
+            )
+            return 201, response
+
+    def list_journals(
+        self,
+        environment_id: str,
+        account_id: str,
+        limit: int,
+        status: str | None = None,
+        instrument_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self.engine.connect() as connection:
+            self._require_account(connection, environment_id, account_id)
+            statement = select(schema.trading_journals).where(
+                schema.trading_journals.c.environment_id == environment_id,
+                schema.trading_journals.c.account_id == account_id,
+            )
+            if status:
+                statement = statement.where(schema.trading_journals.c.status == status)
+            if instrument_id:
+                statement = statement.where(
+                    schema.trading_journals.c.instrument_id == instrument_id
+                )
+            rows = connection.execute(
+                statement.order_by(
+                    schema.trading_journals.c.updated_ts_ms.desc(),
+                    schema.trading_journals.c.journal_id,
+                ).limit(limit)
+            ).mappings()
+            return [_row(row) for row in rows]
+
+    def get_journal(
+        self, environment_id: str, account_id: str, journal_id: str
+    ) -> dict[str, Any]:
+        with self.engine.connect() as connection:
+            journal = self._journal_row(
+                connection, environment_id, account_id, journal_id, for_update=False
+            )
+            revisions = connection.execute(
+                select(schema.trade_plan_revisions)
+                .where(schema.trade_plan_revisions.c.journal_id == journal_id)
+                .order_by(schema.trade_plan_revisions.c.revision_number)
+            ).mappings()
+            return _row(journal) | {"plan_revisions": [_row(row) for row in revisions]}
+
+    def patch_journal(
+        self,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        request: JournalPatch,
+    ) -> dict[str, Any]:
+        with self.uow.bootstrap() as store:
+            row = self._journal_row(
+                store.session, environment_id, account_id, journal_id, for_update=True
+            )
+            self._require_journal_version(row, request.version)
+            changes = request.model_dump(exclude={"version", "change_reason"}, exclude_unset=True)
+            if not changes:
+                raise ApplicationError(
+                    "INVALID_REQUEST", "no journal fields were supplied", status_code=400
+                )
+            now = self.now_ms()
+            next_version = request.version + 1
+            store.session.execute(
+                update(schema.trading_journals)
+                .where(schema.trading_journals.c.journal_id == journal_id)
+                .values(**changes, version=next_version, updated_ts_ms=now)
+            )
+            self._audit_journal(
+                store,
+                journal_id,
+                "UPDATED",
+                next_version,
+                now,
+                reason=request.change_reason,
+                details={"fields": sorted(changes)},
+            )
+            return self._journal_response(store.session, journal_id)
+
+    def planner_context(
+        self, environment_id: str, account_id: str, instrument_id: str
+    ) -> dict[str, Any]:
+        with self.uow.session_factory.begin() as session:
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            return self._planner_context(session, environment_id, account_id, instrument_id)
+
+    def preview_trade_plan(
+        self, environment_id: str, account_id: str, request: TradePlannerPreview
+    ) -> dict[str, Any]:
+        with self.uow.session_factory.begin() as session:
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            context = self._planner_context(
+                session, environment_id, account_id, request.instrument_id
+            )
+            return self._calculate_plan(request, context) | {"context": context}
+
+    def create_plan_revision(
+        self,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        request: PlanRevisionCreate,
+        idempotency_key: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload = request.model_dump(mode="json")
+        scope = f"create-plan-revision:{journal_id}"
+        with self.uow.bootstrap() as store:
+            replay = self._idempotent_replay(
+                store, environment_id, scope, idempotency_key, payload
+            )
+            if replay:
+                return replay
+            journal = self._journal_row(
+                store.session, environment_id, account_id, journal_id, for_update=True
+            )
+            self._require_journal_version(journal, request.journal_version)
+            if journal["status"] in {"CANCELLED", "REVIEWED"}:
+                raise ApplicationError(
+                    "INVALID_JOURNAL_STATE",
+                    "journal cannot accept a plan revision",
+                    status_code=409,
+                )
+            context = self._planner_context(
+                store.session, environment_id, account_id, journal["instrument_id"]
+            )
+            result = self._calculate_plan(request, context)
+            number = int(
+                store.session.execute(
+                    select(
+                        func.coalesce(
+                            func.max(schema.trade_plan_revisions.c.revision_number), 0
+                        )
+                    )
+                    .where(schema.trade_plan_revisions.c.journal_id == journal_id)
+                ).scalar_one()
+            ) + 1
+            now = self.now_ms()
+            revision_id = f"planrev_{uuid4().hex}"
+            revision = {
+                "plan_revision_id": revision_id,
+                "journal_id": journal_id,
+                "revision_number": number,
+                "entry_price": request.entry_price,
+                "planned_position_notional": request.planned_position_notional,
+                "stop_loss_price": request.stop_loss_price,
+                "take_profit_price": request.take_profit_price,
+                "max_position_notional": request.max_position_notional,
+                "max_account_risk_rate": request.max_account_risk_rate,
+                "min_reward_risk_ratio": request.min_reward_risk_ratio,
+                "context_json": context,
+                "calculation_json": result["calculation"],
+                "validation_results_json": result["validations"],
+                "validation_status": result["validation_status"],
+                "calculator_version": result["calculator_version"],
+                "revision_reason": request.revision_reason,
+                "is_initial_confirmed": False,
+                "created_ts_ms": now,
+            }
+            store.session.execute(schema.trade_plan_revisions.insert().values(**revision))
+            next_version = request.journal_version + 1
+            store.session.execute(
+                update(schema.trading_journals)
+                .where(schema.trading_journals.c.journal_id == journal_id)
+                .values(
+                    current_plan_revision_id=revision_id,
+                    version=next_version,
+                    updated_ts_ms=now,
+                )
+            )
+            self._audit_journal(
+                store,
+                journal_id,
+                "PLAN_REVISION_CREATED",
+                next_version,
+                now,
+                reason=request.revision_reason,
+                details={"plan_revision_id": revision_id, "revision_number": number},
+            )
+            response = _json_value(revision) | {"journal_version": next_version}
+            self._record_idempotency(
+                store, environment_id, scope, idempotency_key, payload, 201, response
+            )
+            return 201, response
+
+    def transition_journal(
+        self,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        target: str,
+        request: JournalTransition,
+        idempotency_key: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload = request.model_dump(mode="json")
+        scope = f"journal-transition:{journal_id}:{target}"
+        with self.uow.bootstrap() as store:
+            replay = self._idempotent_replay(
+                store, environment_id, scope, idempotency_key, payload
+            )
+            if replay:
+                return replay
+            journal = self._journal_row(
+                store.session, environment_id, account_id, journal_id, for_update=True
+            )
+            self._require_journal_version(journal, request.version)
+            allowed = {("DRAFT", "READY"), ("DRAFT", "CANCELLED"), ("READY", "CANCELLED")}
+            if (journal["status"], target) not in allowed:
+                raise ApplicationError(
+                    "INVALID_JOURNAL_STATE",
+                    "journal state transition is not allowed",
+                    status_code=409,
+                )
+            revision = None
+            if target == "READY":
+                revision_id = journal["current_plan_revision_id"]
+                if revision_id is None:
+                    raise ApplicationError(
+                        "INVALID_JOURNAL_STATE",
+                        "a validated plan revision is required",
+                        status_code=409,
+                    )
+                revision = store.session.execute(
+                    select(schema.trade_plan_revisions).where(
+                        schema.trade_plan_revisions.c.plan_revision_id == revision_id
+                    )
+                ).mappings().one()
+                if revision["validation_status"] != "PASS":
+                    raise ApplicationError(
+                        "PLAN_VALIDATION_FAILED",
+                        "plan revision has not passed validation",
+                        status_code=409,
+                    )
+            now = self.now_ms()
+            next_version = request.version + 1
+            timestamp_field = "ready_ts_ms" if target == "READY" else "cancelled_ts_ms"
+            confirmed_revision_id = journal["current_plan_revision_id"]
+            if target == "READY" and revision is not None:
+                confirmed_revision_id = f"planrev_{uuid4().hex}"
+                confirmed_values = {
+                    key: revision[key]
+                    for key in (
+                        "entry_price",
+                        "planned_position_notional",
+                        "stop_loss_price",
+                        "take_profit_price",
+                        "max_position_notional",
+                        "max_account_risk_rate",
+                        "min_reward_risk_ratio",
+                        "context_json",
+                        "calculation_json",
+                        "validation_results_json",
+                        "validation_status",
+                        "calculator_version",
+                    )
+                }
+                store.session.execute(
+                    schema.trade_plan_revisions.insert().values(
+                        **confirmed_values,
+                        plan_revision_id=confirmed_revision_id,
+                        journal_id=journal_id,
+                        revision_number=int(revision["revision_number"]) + 1,
+                        revision_reason=f"initial confirmation: {request.reason}",
+                        is_initial_confirmed=True,
+                        created_ts_ms=now,
+                        confirmed_ts_ms=now,
+                    )
+                )
+            store.session.execute(
+                update(schema.trading_journals)
+                .where(schema.trading_journals.c.journal_id == journal_id)
+                .values(
+                    status=target,
+                    version=next_version,
+                    updated_ts_ms=now,
+                    current_plan_revision_id=confirmed_revision_id,
+                    **{timestamp_field: now},
+                )
+            )
+            self._audit_journal(
+                store,
+                journal_id,
+                "STATUS_CHANGED",
+                next_version,
+                now,
+                from_status=journal["status"],
+                to_status=target,
+                reason=request.reason,
+                details={},
+            )
+            response = self._journal_response(store.session, journal_id)
+            self._record_idempotency(
+                store, environment_id, scope, idempotency_key, payload, 200, response
+            )
+            return 200, response
+
+    def _planner_context(
+        self, session: Any, environment_id: str, account_id: str, instrument_id: str
+    ) -> dict[str, Any]:
+        self._require_account(session, environment_id, account_id)
+        rules = self.market_rules.get(instrument_id)
+        if rules is None:
+            raise ApplicationError(
+                "MARKET_RULES_UNAVAILABLE", "market rules are not configured", status_code=503
+            )
+        if self.fee_schedule is None:
+            raise ApplicationError(
+                "FEE_SCHEDULE_UNAVAILABLE", "fee schedule is not configured", status_code=503
+            )
+        exchange_id, market_type, symbol = instrument_id.split(":", 2)
+        if market_type != "SPOT":
+            raise ApplicationError(
+                "INVALID_REQUEST", "only SPOT instruments are supported", status_code=400
+            )
+        _, quote_asset = symbol.split("/", 1)
+        balances = list(
+            session.execute(
+                select(schema.asset_balances)
+                .where(schema.asset_balances.c.account_id == account_id)
+                .order_by(schema.asset_balances.c.asset)
+            ).mappings()
+        )
+        available_quote = Decimal(0)
+        effective_equity = Decimal(0)
+        unavailable_assets: list[str] = []
+        valuation_quotes: list[dict[str, Any]] = []
+        for balance in balances:
+            total = Decimal(balance["available"]) + Decimal(balance["locked"])
+            asset = balance["asset"]
+            if asset == quote_asset:
+                available_quote = Decimal(balance["available"])
+                effective_equity += total
+                continue
+            if total == 0:
+                continue
+            valuation_instrument = f"{exchange_id}:SPOT:{asset}/{quote_asset}"
+            liquidity = session.execute(
+                select(schema.simulated_liquidity).where(
+                    schema.simulated_liquidity.c.environment_id == environment_id,
+                    schema.simulated_liquidity.c.exchange_id == exchange_id,
+                    schema.simulated_liquidity.c.instrument_id == valuation_instrument,
+                )
+            ).mappings().one_or_none()
+            if liquidity is None or not liquidity["residual_bids_json"]:
+                unavailable_assets.append(asset)
+                continue
+            age_ms = self.now_ms() - int(liquidity["updated_ts_ms"])
+            if age_ms < 0 or age_ms > self.max_market_age_ms:
+                unavailable_assets.append(asset)
+                continue
+            bid = Decimal(liquidity["residual_bids_json"][0][0])
+            effective_equity += total * bid
+            valuation_quotes.append(
+                {
+                    "asset": asset,
+                    "instrument_id": valuation_instrument,
+                    "bid": str(bid),
+                    "event_id": liquidity["source_book_event_id"],
+                    "updated_ts_ms": int(liquidity["updated_ts_ms"]),
+                }
+            )
+        market = session.execute(
+            select(schema.simulated_liquidity).where(
+                schema.simulated_liquidity.c.environment_id == environment_id,
+                schema.simulated_liquidity.c.exchange_id == exchange_id,
+                schema.simulated_liquidity.c.instrument_id == instrument_id,
+            )
+        ).mappings().one_or_none()
+        market_status = "UNAVAILABLE"
+        market_event_id = None
+        market_updated_ts_ms = None
+        if market is not None and market["residual_bids_json"] and market["residual_asks_json"]:
+            age_ms = self.now_ms() - int(market["updated_ts_ms"])
+            if 0 <= age_ms <= self.max_market_age_ms:
+                market_status = "VALID"
+                market_event_id = market["source_book_event_id"]
+                market_updated_ts_ms = int(market["updated_ts_ms"])
+        valuation_status = "COMPLETE" if not unavailable_assets else "INCOMPLETE"
+        return {
+            "environment_id": environment_id,
+            "account_id": account_id,
+            "instrument_id": instrument_id,
+            "as_of_ts_ms": self.now_ms(),
+            "quote_asset": quote_asset,
+            "available_quote_balance": str(available_quote),
+            "effective_account_equity": (
+                str(effective_equity) if valuation_status == "COMPLETE" else None
+            ),
+            "valuation_status": valuation_status,
+            "unavailable_assets": unavailable_assets,
+            "valuation_quotes": valuation_quotes,
+            "fee_schedule": self.fee_schedule_view(),
+            "market_rules": self.market_rules_view(instrument_id),
+            "market_status": market_status,
+            "market_event_id": market_event_id,
+            "market_updated_ts_ms": market_updated_ts_ms,
+        }
+
+    @staticmethod
+    def _calculate_plan(request: Any, context: dict[str, Any]) -> dict[str, Any]:
+        rules = context["market_rules"]
+        fee = context["fee_schedule"]
+        equity = context["effective_account_equity"]
+        return calculate_plan(
+            entry_price=request.entry_price,
+            planned_position_notional=request.planned_position_notional,
+            stop_loss_price=request.stop_loss_price,
+            take_profit_price=request.take_profit_price,
+            effective_equity=Decimal(equity) if equity is not None else None,
+            available_quote_balance=Decimal(context["available_quote_balance"]),
+            fee_rate=Decimal(fee["conservative_fee_rate"]),
+            price_increment=Decimal(rules["price_increment"]),
+            quantity_increment=Decimal(rules["quantity_increment"]),
+            min_quantity=Decimal(rules["min_quantity"]),
+            min_notional=(
+                Decimal(rules["min_notional"])
+                if rules["min_notional"] is not None
+                else None
+            ),
+            max_position_notional=request.max_position_notional,
+            max_account_risk_rate=request.max_account_risk_rate,
+            min_reward_risk_ratio=request.min_reward_risk_ratio,
+            market_status=context["market_status"],
+            valuation_status=context["valuation_status"],
+        )
+
+    @staticmethod
+    def _require_journal_version(row: Any, expected: int) -> None:
+        if int(row["version"]) != expected:
+            raise ApplicationError(
+                "JOURNAL_VERSION_CONFLICT",
+                "journal version does not match the current version",
+                status_code=409,
+                details={"current_version": int(row["version"])},
+            )
+
+    @staticmethod
+    def _journal_row(
+        session: Any,
+        environment_id: str,
+        account_id: str,
+        journal_id: str,
+        *,
+        for_update: bool,
+    ) -> Any:
+        statement = select(schema.trading_journals).where(
+            schema.trading_journals.c.environment_id == environment_id,
+            schema.trading_journals.c.account_id == account_id,
+            schema.trading_journals.c.journal_id == journal_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = session.execute(statement).mappings().one_or_none()
+        if row is None:
+            raise ApplicationError(
+                "JOURNAL_NOT_FOUND", "trading journal was not found", status_code=404
+            )
+        return row
+
+    @staticmethod
+    def _journal_response(session: Any, journal_id: str) -> dict[str, Any]:
+        row = session.execute(
+            select(schema.trading_journals).where(
+                schema.trading_journals.c.journal_id == journal_id
+            )
+        ).mappings().one()
+        return _row(row)
+
+    @staticmethod
+    def _audit_journal(
+        store: Any,
+        journal_id: str,
+        event_type: str,
+        version: int,
+        timestamp: int,
+        *,
+        from_status: str | None = None,
+        to_status: str | None = None,
+        reason: str | None = None,
+        details: dict[str, Any],
+    ) -> None:
+        store.session.execute(
+            schema.journal_audit_events.insert().values(
+                audit_event_id=f"jaudit_{uuid4().hex}",
+                journal_id=journal_id,
+                event_type=event_type,
+                from_status=from_status,
+                to_status=to_status,
+                reason=reason,
+                journal_version=version,
+                details_json=details,
+                created_ts_ms=timestamp,
+            )
+        )
+
     def ready(self) -> bool:
         try:
             with self.engine.connect() as connection:
                 revision = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one_or_none()
-                return revision == "0003_realtime_state_version"
+                return revision == "0004_trading_journal"
         except Exception:
             # Reason is logged without secrets so operators can diagnose a
             # 503 from /health/ready; the response itself stays opaque.

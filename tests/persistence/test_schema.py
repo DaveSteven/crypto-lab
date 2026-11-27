@@ -15,6 +15,9 @@ EXPECTED_TABLES = {
     "liquidity_consumptions",
     "id_generator_state",
     "api_idempotency_keys",
+    "trading_journals",
+    "trade_plan_revisions",
+    "journal_audit_events",
 }
 
 
@@ -29,6 +32,7 @@ def test_financial_columns_use_fixed_precision_numeric() -> None:
         ("paper_orders", "quantity"),
         ("executions", "price"),
         ("positions", "cost_basis"),
+        ("trade_plan_revisions", "entry_price"),
     ]:
         column_type = metadata.tables[table_name].c[column_name].type
         assert column_type.precision == 50
