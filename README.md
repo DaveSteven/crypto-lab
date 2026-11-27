@@ -2,7 +2,7 @@
 
 Crypto Lab 是一个基于真实虚拟货币市场数据、使用虚拟资金进行交易和量化研究的个人实验平台。
 
-项目当前并行推进 **Phase 1 基础模拟交易** 与 **Phase 0-B 长期实验**。Phase 0-A 已通过，Phase 0-B 仍为 Pending。项目不连接真实交易账户或钱包，也不执行真实交易；任何账户、余额及订单均为本地虚拟数据。
+项目已完成并验收 **Phase 1 基础模拟交易**，当前在 Phase 2 前优先推进 Trading Journal、Chart Analysis、Trading Experiment 与 Experiment Analytics；Phase 0-B 长期实验仍独立 Pending。项目不连接真实交易账户或钱包，也不执行真实交易；任何账户、余额及订单均为本地虚拟数据。
 
 ## 环境要求
 
@@ -151,6 +151,7 @@ data/             本地实验数据（运行数据不提交 Git）
 - [REST API 设计](docs/09-REST-API-DESIGN.md)
 - [Phase 1 多环境性能基线](docs/14-PHASE-1-PERFORMANCE-BASELINE.md)
 - [Phase 1 最终验收报告](docs/15-PHASE-1-ACCEPTANCE-REPORT.md)
+- [Trading Journal 架构与设计](docs/16-TRADING-JOURNAL-DESIGN.md)
 
 候选交易所、依赖和接口行为尚待真实验证。未经验证的内容不得标记为已验证结果。
 

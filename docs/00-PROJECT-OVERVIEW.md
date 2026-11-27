@@ -499,10 +499,12 @@ Phase 1 按以下独立验收任务推进：
 8. Task 1.11：实时行情服务。
 9. Task 1.12：React 前端应用。
 10. Task 1.13：前后端联调与 Phase 1 验收。
-11. Task 1.14：Trading Journal（Phase 2 前扩展任务，Pending）。
-12. Task 1.15：Chart Analysis Tools（Phase 2 前扩展任务，Pending）。
+11. Task 1.14：Trading Journal（Task 1.14.1 设计完成待确认）。
+12. Task 1.15：Chart Analysis（Phase 2 前扩展任务，Pending）。
+13. Task 1.16：Trading Experiment（Phase 2 前扩展任务，Pending）。
+14. Task 1.17：Experiment Analytics（Phase 2 前扩展任务，Pending）。
 
-Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现和验收；Phase 0-B 不阻塞 Phase 1，但重大数据质量问题必须触发行情依赖复审。Task 1.14～1.15 在 Task 1.13 及 Phase 1 最终验收完成后新增，安排于 Phase 2 开始前，不追溯改变既有验收结论；当前仅记录需求，具体设计另行确认。
+Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现和验收；Phase 0-B 不阻塞 Phase 1，但重大数据质量问题必须触发行情依赖复审。Task 1.14～1.17 在 Task 1.13 及 Phase 1 最终验收完成后新增，安排于 Phase 2 开始前，不追溯改变既有验收结论。顺序为 Trading Journal → Chart Analysis → Trading Experiment → Experiment Analytics → Phase 2；Task 1.14 设计见 docs/16。
 
 ### Phase 2 — 跨交易所套利
 
@@ -661,6 +663,8 @@ Task 1.5～1.8 保持 Python 领域层开发。以上任务按边界分别实现
 - [x] 完成 Phase 1 Task 1.12 React 前端应用。
 - [x] 完成 Phase 1 Task 1.13 前后端联调与最终验收（Accepted，2026-11-26）。
 - [x] Phase 1 最终验收通过（Phase 0-B 独立长期研究仍为 Pending）。
-- [ ] 完成 Task 1.14 Trading Journal（Phase 2 前扩展任务；当前仅记录 Roadmap）。
-- [ ] 完成 Task 1.15 Chart Analysis Tools（Phase 2 前扩展任务；当前仅记录 Roadmap）。
+- [ ] 完成 Task 1.14 Trading Journal（1.14.1 设计完成待确认，尚未实现）。
+- [ ] 完成 Task 1.15 Chart Analysis（Phase 2 前扩展任务）。
+- [ ] 完成 Task 1.16 Trading Experiment（Phase 2 前扩展任务）。
+- [ ] 完成 Task 1.17 Experiment Analytics（Phase 2 前扩展任务）。
 

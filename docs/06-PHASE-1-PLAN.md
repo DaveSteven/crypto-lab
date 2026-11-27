@@ -4,11 +4,11 @@
 
 | 属性 | 内容 |
 |---|---|
-| 文档版本 | V1.1 |
+| 文档版本 | V1.2 |
 | 当前阶段 | Phase 1 Accepted；Phase 2 前扩展任务 |
 | 前置验收 | Phase 0-A 已通过 |
 | 并行研究 | Phase 0-B Pending |
-| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14～1.15 Pending |
+| 状态 | Phase 1 Completed / Accepted（2026-11-26）；Task 1.14.1 设计完成待确认；Task 1.15～1.17 Pending |
 
 ## 1. 目标
 
@@ -35,10 +35,12 @@ Phase 0-B 保持独立研究状态，不阻塞 Phase 1；若长期实验发现�
 | 1.11 | 实时行情服务 | Completed |
 | 1.12 | React 前端应用 | Completed（Gate E Accepted，2026-11-26） |
 | 1.13 | 前后端联调与 Phase 1 验收 | Completed（Accepted，2026-11-26） |
-| 1.14 | Trading Journal | Pending（Phase 2 前扩展任务） |
-| 1.15 | Chart Analysis Tools | Pending（Phase 2 前扩展任务） |
+| 1.14 | Trading Journal | 1.14.1 Proposed / Awaiting Confirmation |
+| 1.15 | Chart Analysis | Pending（Phase 2 前扩展任务） |
+| 1.16 | Trading Experiment | Pending（Phase 2 前扩展任务） |
+| 1.17 | Experiment Analytics | Pending（Phase 2 前扩展任务） |
 
-Task 1.14～1.15 是 Task 1.13 完成后、Phase 2 开始前新增的独立扩展任务，不追溯改变 Task 1.13 及 Phase 1 已通过的验收结论。当前仅记录 Roadmap 与需求边界；具体架构、Contract、数据模型、子任务和验收标准须在进入对应任务前单独设计并确认。
+Task 1.14～1.17 是 Task 1.13 完成后、Phase 2 开始前新增的个人学习与策略研究任务，不追溯改变 Task 1.13 及 Phase 1 已通过的验收结论。开发顺序为 Trading Journal → Chart Analysis → Trading Experiment → Experiment Analytics → Phase 2。Task 1.14.1 已形成 Proposed 设计，见 [`16-TRADING-JOURNAL-DESIGN.md`](16-TRADING-JOURNAL-DESIGN.md)；负责人确认前不进入 Migration 或业务实现。
 
 ### Task 1.1 — 模拟账户与资金流水
 
@@ -300,7 +302,7 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 
 ### Task 1.14 — Trading Journal
 
-**状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
+**状态：Task 1.14.1 Architecture & Design 已完成，等待负责人确认；尚未开始业务开发。**
 
 目标：支持个人金融学习、交易决策记录、交易纪律训练及复盘。
 
@@ -312,6 +314,10 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 - 一个日志可关联多个 Order / Fill。
 - 支持交易后复盘、经验总结，以及草稿、进行中、已完成等日志状态。
 - 按模拟环境及账户隔离，并使用 PostgreSQL 持久化。
+- Trade Planner 为 P0：Entry、仓位金额、SL、TP，基于有效资产、余额、实际 Fee Schedule、Market Rules 和风险限制计算数量、双边费用、净盈利/亏损、R:R、风险率、仓位率及最大仓位。
+- 后端执行权威规则校验，前端提供 Decimal 实时预览；数值通过不代表人工市场信号成立。
+- 生命周期为 Draft → Ready → Active → Closed → Reviewed，另有 Cancelled；首次确认快照不可变，后续修改保存 Revision。
+- 支持把已确认计划带入 Order Entry 草稿，但不绕过确认 Dialog；SL/TP 不代表自动执行。
 
 边界与约束：
 
@@ -320,7 +326,20 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 - 日志级盈亏统计必须在设计阶段明确关联成交及成本分配语义，不得自行推断或重复计算权威结果。
 - 不引入 AI 买卖建议；保持 Desktop Only，并复用现有 UI/UX Design System。
 
-### Task 1.15 — Chart Analysis Tools
+子任务：
+
+1. 1.14.1 Architecture & Design（Proposed，等待确认）。
+2. 1.14.2 Persistence & REST API。
+3. 1.14.3 Journal List & Detail。
+4. 1.14.4 Trade Plan Editor。
+5. 1.14.5 Order & Fill Association。
+6. 1.14.6 Emotion & Trading Discipline。
+7. 1.14.7 Trade Review。
+8. 1.14.8 Integration & Acceptance。
+
+设计阶段明确未来 Experiment / Strategy Version 的关系边界；Task 1.14 不提前增加占位字段、实验规则或统计。
+
+### Task 1.15 — Chart Analysis
 
 **状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
 
@@ -329,8 +348,25 @@ Task 1.13 最终证据见 [`15-PHASE-1-ACCEPTANCE-REPORT.md`](15-PHASE-1-ACCEPTA
 - 指标：MA / EMA、RSI、MACD、ATR、Bollinger Bands。
 - 绘图与测量：水平线、趋势线、价格及涨跌幅测量。
 - 图表分析设置持久化。
+- 支撑及阻力价格区域。
+- 多周期分析。
+- 静态金融知识说明，不提供 AI 买卖建议。
 
 具体数据语义、计算位置、图表交互、持久化方式、性能边界、技术方案、任务拆分及验收标准，在进入 Task 1.15 前另行设计并确认。
+
+### Task 1.16 — Trading Experiment
+
+**状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
+
+初步范围：实验创建与管理、不可变 Strategy Version、参数锁定、环境/账户绑定、交易计划关联、检查清单、风险计算、自动规则校验、违规记录，以及实验模式与自由交易模式分离。
+
+首个候选实验为 Experiment 001 — Support Bounce Strategy V0.1：初始本金 751 USDT、BTC/USDT Spot、单笔仓位上限 100 USDT、计划风险上限为当前账户有效资产 0.5%、最低净收益风险比 2:1、目标 30 笔完整交易；禁止杠杆、亏损后加仓和临时扩大止损。V0.1 建议只允许一个进行中的计划且暂不允许加仓。趋势判断与反弹确认信号仍待负责人确认。
+
+### Task 1.17 — Experiment Analytics
+
+**状态：Pending。本轮仅记录 Roadmap，不开始设计或开发。**
+
+初步范围：完整样本数、实验进度、净利润、ROI、胜率、实际盈亏比、Profit Factor、Expectancy、明确口径的回撤、最长连亏、策略执行率、累计手续费、违规统计及研究结论。全部统计必须基于真实模拟 Execution、锁定的 Strategy Version 和完整 Journal 样本；不得通过删除亏损或违规记录改善结果。
 
 ## 3. Task 1.1 验收标准
 
